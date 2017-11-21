@@ -1,13 +1,11 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef CMS_VERIFIER_H
-#define CMS_VERIFIER_H
+#ifndef CERT_TRANS_LOG_CMS_VERIFIER_H_
+#define CERT_TRANS_LOG_CMS_VERIFIER_H_
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
 #include <openssl/cms.h>
 #include <memory>
 
-#include "base/macros.h"
 #include "log/cert.h"
 #include "util/openssl_util.h"  // for LOG_OPENSSL_ERRORS
 #include "util/status.h"
@@ -19,6 +17,8 @@ class CmsVerifier {
   CmsVerifier() = default;
 
   virtual ~CmsVerifier() = default;
+  CmsVerifier(const CmsVerifier&) = delete;
+  CmsVerifier& operator=(const CmsVerifier&) = delete;
 
   // NOTE: CMS related API is provisional and may evolve over the near
   // future. Public API does not refer to OpenSSL CMS data objects to
@@ -32,14 +32,15 @@ class CmsVerifier {
   // Checks that a CMS_ContentInfo has a signer that matches a specified
   // certificate. Does not verify the signature or check the payload.
   virtual util::StatusOr<bool> IsCmsSignedByCert(const std::string& cms_object,
-                                                 const Cert* cert) const;
+                                                 const Cert& cert) const;
 
   // Unpacks a CMS signed data object that is assumed to contain a certificate
   // Does not do any checks on signatures or cert validity at this point,
   // the caller must do these separately. Returns a new Cert object built from
   // the unpacked data, which will only be valid if we successfully unpacked
   // the CMS blob.
-  virtual Cert* UnpackCmsSignedCertificate(const std::string& cms_object);
+  virtual std::unique_ptr<Cert> UnpackCmsSignedCertificate(
+      const std::string& cms_object);
 
   // Unpacks a CMS signed data object that is assumed to contain a certificate
   // If the CMS signature verifies as being signed by the supplied Cert
@@ -50,8 +51,8 @@ class CmsVerifier {
   // NOTE: Certificate validity checks must be done separately. This
   // only checks that the CMS signature is validly made by the supplied
   // certificate.
-  virtual Cert* UnpackCmsSignedCertificate(BIO* cms_bio_in,
-                                           const Cert& verify_cert);
+  virtual std::unique_ptr<Cert> UnpackCmsSignedCertificate(
+      BIO* cms_bio_in, const Cert& verify_cert);
 
  private:
   // Verifies that data from a DER BIO is signed by a given certificate.
@@ -67,9 +68,8 @@ class CmsVerifier {
   // The unpacked data may not be a valid X.509 cert. The caller must
   // apply any additional checks necessary.
   util::Status UnpackCmsDerBio(BIO* cms_bio_in, BIO* cms_bio_out);
-
-  DISALLOW_COPY_AND_ASSIGN(CmsVerifier);
 };
 
 }  // namespace cert_trans
-#endif
+
+#endif  // CERT_TRANS_LOG_CMS_VERIFIER_H_

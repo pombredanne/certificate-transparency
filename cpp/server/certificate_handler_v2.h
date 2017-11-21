@@ -16,13 +16,16 @@ class CertificateHttpHandlerV2 : public HttpHandlerV2 {
   // this instance. The |frontend| and |cert_checker| parameters can be NULL,
   // in which case this server will not accept "add-chain" and "add-pre-chain"
   // requests.
-  CertificateHttpHandlerV2(
-      LogLookup* log_lookup, const ReadOnlyDatabase* db,
-      const ClusterStateController<LoggedEntry>* controller,
-      const CertChecker* cert_checker, Frontend* frontend, ThreadPool* pool,
-      libevent::Base* event_base, StalenessTracker* staleness_tracker);
+  CertificateHttpHandlerV2(LogLookup* log_lookup, const ReadOnlyDatabase* db,
+                           const ClusterStateController* controller,
+                           const CertChecker* cert_checker, Frontend* frontend,
+                           ThreadPool* pool, libevent::Base* event_base,
+                           StalenessTracker* staleness_tracker);
 
   ~CertificateHttpHandlerV2() = default;
+  CertificateHttpHandlerV2(const CertificateHttpHandlerV2&) = delete;
+  CertificateHttpHandlerV2& operator=(const CertificateHttpHandlerV2&) =
+      delete;
 
  protected:
   void AddHandlers(libevent::HttpServer* server) override;
@@ -40,8 +43,6 @@ class CertificateHttpHandlerV2 : public HttpHandlerV2 {
                         const std::shared_ptr<CertChain>& chain) const;
   void BlockingAddPreChain(evhttp_request* req,
                            const std::shared_ptr<PreCertChain>& chain) const;
-
-  DISALLOW_COPY_AND_ASSIGN(CertificateHttpHandlerV2);
 };
 
 

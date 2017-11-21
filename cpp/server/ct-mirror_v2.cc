@@ -23,6 +23,7 @@
 #include "monitoring/latency.h"
 #include "monitoring/monitoring.h"
 #include "monitoring/registry.h"
+#include "proto/cert_serializer.h"
 #include "server/certificate_handler_v2.h"
 #include "server/json_output.h"
 #include "server/metrics.h"
@@ -153,8 +154,7 @@ static const bool follow_dummy =
 }  // namespace
 
 
-void STHUpdater(Database* db,
-                ClusterStateController<LoggedEntry>* cluster_state_controller,
+void STHUpdater(Database* db, ClusterStateController* cluster_state_controller,
                 mutex* queue_mutex, map<int64_t, ct::SignedTreeHead>* queue,
                 LogLookup* log_lookup, Task* task) {
   CHECK_NOTNULL(db);
@@ -250,6 +250,7 @@ int main(int argc, char* argv[]) {
   signal(SIGINT, SIG_IGN);
   signal(SIGTERM, SIG_IGN);
 
+  ConfigureSerializerForV2CT();
   util::InitCT(&argc, &argv);
 
   if (!FLAGS_i_know_v2_is_not_finished_yet) {
@@ -278,7 +279,8 @@ int main(int argc, char* argv[]) {
                      << pubkey.status();
 
   const LogVerifier log_verifier(new LogSigVerifier(pubkey.ValueOrDie()),
-                                 new MerkleVerifier(new Sha256Hasher));
+                                 new MerkleVerifier(unique_ptr<Sha256Hasher>(
+                                     new Sha256Hasher)));
 
   ThreadPool http_pool(FLAGS_num_http_server_threads);
 
@@ -349,9 +351,9 @@ int main(int argc, char* argv[]) {
   const shared_ptr<RemotePeer> peer(make_shared<RemotePeer>(
       unique_ptr<AsyncLogClient>(
           new AsyncLogClient(&pool, &url_fetcher, FLAGS_target_log_uri)),
-      unique_ptr<LogVerifier>(
-          new LogVerifier(new LogSigVerifier(pubkey.ValueOrDie()),
-                          new MerkleVerifier(new Sha256Hasher))),
+      unique_ptr<LogVerifier>(new LogVerifier(
+          new LogSigVerifier(pubkey.ValueOrDie()),
+          new MerkleVerifier(unique_ptr<Sha256Hasher>(new Sha256Hasher)))),
       new_sth, fetcher_task.task()->AddChild(
                    [](Task*) { LOG(INFO) << "RemotePeer exited."; })));
 

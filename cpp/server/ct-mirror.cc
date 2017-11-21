@@ -33,6 +33,7 @@
 #include "monitoring/latency.h"
 #include "monitoring/monitoring.h"
 #include "monitoring/registry.h"
+#include "proto/cert_serializer.h"
 #include "server/certificate_handler.h"
 #include "server/json_output.h"
 #include "server/metrics.h"
@@ -59,8 +60,8 @@ DEFINE_int32(target_poll_frequency_seconds, 10,
              "How often should the target log be polled for updates.");
 DEFINE_int32(num_http_server_threads, 16,
              "Number of threads for servicing the incoming HTTP requests.");
-DEFINE_string(target_log_uri, "http://ct.googleapis.com/pilot",
-              "URI of the log to mirror.");
+DEFINE_string(target_log_uri, "",
+              "URI of the log to mirror, or empty to disable mirroring.");
 DEFINE_string(
     target_public_key, "",
     "PEM-encoded server public key file of the log we're mirroring.");
@@ -160,8 +161,7 @@ static const bool follow_dummy =
 }  // namespace
 
 
-void STHUpdater(Database* db,
-                ClusterStateController<LoggedEntry>* cluster_state_controller,
+void STHUpdater(Database* db, ClusterStateController* cluster_state_controller,
                 mutex* queue_mutex, map<int64_t, ct::SignedTreeHead>* queue,
                 LogLookup* log_lookup, Task* task) {
   CHECK_NOTNULL(db);
@@ -251,6 +251,25 @@ void STHUpdater(Database* db,
 }
 
 
+shared_ptr<RemotePeer> createTargetPeerFromFlags(
+    ThreadPool* pool, UrlFetcher* url_fetcher, EVP_PKEY* pubkey, Task* task,
+    function<void(const ct::SignedTreeHead&)> new_sth) {
+  if (FLAGS_target_log_uri.empty()) {
+    LOG(WARNING) << "Empty target_log_uri flag; mirroring DISABLED";
+    return shared_ptr<RemotePeer>();
+  }
+
+  return make_shared<RemotePeer>(
+      unique_ptr<AsyncLogClient>(new AsyncLogClient(CHECK_NOTNULL(pool),
+                                                    CHECK_NOTNULL(url_fetcher),
+                                                    FLAGS_target_log_uri)),
+      unique_ptr<LogVerifier>(new LogVerifier(
+          new LogSigVerifier(CHECK_NOTNULL(pubkey)),
+          new MerkleVerifier(unique_ptr<Sha256Hasher>(new Sha256Hasher)))),
+      new_sth, CHECK_NOTNULL(task)->AddChild(
+                   [](Task*) { LOG(INFO) << "RemotePeer exited."; }));
+}
+
 int main(int argc, char* argv[]) {
   // Ignore various signals whilst we start up.
   signal(SIGHUP, SIG_IGN);
@@ -258,6 +277,7 @@ int main(int argc, char* argv[]) {
   signal(SIGTERM, SIG_IGN);
 
   util::InitCT(&argc, &argv);
+  ConfigureSerializerForV1CT();
 
   Server::StaticInit();
 
@@ -280,7 +300,8 @@ int main(int argc, char* argv[]) {
                      << pubkey.status();
 
   const LogVerifier log_verifier(new LogSigVerifier(pubkey.ValueOrDie()),
-                                 new MerkleVerifier(new Sha256Hasher));
+                                 new MerkleVerifier(unique_ptr<Sha256Hasher>(
+                                     new Sha256Hasher)));
 
   ThreadPool http_pool(FLAGS_num_http_server_threads);
 
@@ -327,7 +348,6 @@ int main(int argc, char* argv[]) {
     server.election()->WaitToBecomeMaster();
   }
 
-  CHECK(!FLAGS_target_log_uri.empty());
 
   ThreadPool pool(16);
   SyncTask fetcher_task(&pool);
@@ -348,16 +368,13 @@ int main(int argc, char* argv[]) {
         queue.insert(make_pair(sth.tree_size(), sth));
       });
 
-  const shared_ptr<RemotePeer> peer(make_shared<RemotePeer>(
-      unique_ptr<AsyncLogClient>(
-          new AsyncLogClient(&pool, &url_fetcher, FLAGS_target_log_uri)),
-      unique_ptr<LogVerifier>(
-          new LogVerifier(new LogSigVerifier(pubkey.ValueOrDie()),
-                          new MerkleVerifier(new Sha256Hasher))),
-      new_sth, fetcher_task.task()->AddChild(
-                   [](Task*) { LOG(INFO) << "RemotePeer exited."; })));
-
-  server.continuous_fetcher()->AddPeer("target", peer);
+  const shared_ptr<RemotePeer> peer(
+      createTargetPeerFromFlags(&pool, &url_fetcher, pubkey.ValueOrDie(),
+                                fetcher_task.task(), new_sth));
+  if (peer) {
+    LOG(INFO) << "Adding remote peer for target log.";
+    server.continuous_fetcher()->AddPeer("target", peer);
+  }
 
   server.WaitForReplication();
 

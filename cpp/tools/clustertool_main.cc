@@ -13,8 +13,9 @@
 #include "log/sqlite_db.h"
 #include "log/strict_consistent_store.h"
 #include "log/tree_signer.h"
+#include "proto/cert_serializer.h"
 #include "proto/ct.pb.h"
-#include "tools/clustertool-inl.h"
+#include "tools/clustertool.h"
 #include "util/etcd.h"
 #include "util/init.h"
 #include "util/masterelection.h"
@@ -78,18 +79,19 @@ void Usage() {
 unique_ptr<LogSigner> BuildLogSigner() {
   CHECK(!FLAGS_key.empty());
   util::StatusOr<EVP_PKEY*> pkey(ReadPrivateKey(FLAGS_key));
-  CHECK_EQ(pkey.status(), util::Status::OK);
+  CHECK_EQ(pkey.status(), ::util::OkStatus());
   return unique_ptr<LogSigner>(new LogSigner(pkey.ValueOrDie()));
 }
 
 
-unique_ptr<TreeSigner<LoggedEntry>> BuildTreeSigner(
-    Database* db, ConsistentStore<LoggedEntry>* consistent_store,
-    LogSigner* log_signer) {
-  return unique_ptr<TreeSigner<LoggedEntry>>(new TreeSigner<LoggedEntry>(
-      std::chrono::duration<double>(0), db,
-      unique_ptr<CompactMerkleTree>(new CompactMerkleTree(new Sha256Hasher)),
-      consistent_store, log_signer));
+unique_ptr<TreeSigner> BuildTreeSigner(Database* db,
+                                       ConsistentStore* consistent_store,
+                                       LogSigner* log_signer) {
+  return unique_ptr<TreeSigner>(
+      new TreeSigner(std::chrono::duration<double>(0), db,
+                     unique_ptr<CompactMerkleTree>(new CompactMerkleTree(
+                         unique_ptr<Sha256Hasher>(new Sha256Hasher))),
+                     consistent_store, log_signer));
 }
 
 
@@ -132,8 +134,10 @@ ClusterConfig LoadConfig() {
 
 
 int main(int argc, char* argv[]) {
-  util::InitCT(&argc, &argv);
   FLAGS_logtostderr = true;
+
+  ConfigureSerializerForV1CT();
+  util::InitCT(&argc, &argv);
 
   if (argc == 1) {
     Usage();
@@ -154,19 +158,17 @@ int main(int argc, char* argv[]) {
   unique_ptr<MasterElection> election(
       BuildAndJoinMasterElection(node_id, event_base, &etcd_client));
   ThreadPool internal_pool(4);
-  StrictConsistentStore<LoggedEntry> consistent_store(
+  StrictConsistentStore consistent_store(
       election.get(),
-      new EtcdConsistentStore<LoggedEntry>(event_base.get(), &internal_pool,
-                                           &etcd_client, election.get(),
-                                           "/root", node_id));
+      new EtcdConsistentStore(event_base.get(), &internal_pool, &etcd_client,
+                              election.get(), "/root", node_id));
   SQLiteDB db("/tmp/clustertooldb");
-
 
   const string command(argv[1]);
   Status status;
   if (command == "initlog") {
     unique_ptr<LogSigner> log_signer(BuildLogSigner());
-    unique_ptr<TreeSigner<LoggedEntry>> tree_signer(
+    unique_ptr<TreeSigner> tree_signer(
         BuildTreeSigner(&db, &consistent_store, log_signer.get()));
     status = InitLog(LoadConfig(), tree_signer.get(), &consistent_store);
   } else if (command == "set_config") {

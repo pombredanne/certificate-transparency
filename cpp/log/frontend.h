@@ -1,13 +1,10 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef FRONTEND_H
-#define FRONTEND_H
+#ifndef CERT_TRANS_LOG_FRONTEND_H_
+#define CERT_TRANS_LOG_FRONTEND_H_
 
 #include <memory>
 #include <mutex>
 
-#include "base/macros.h"
 #include "log/cert.h"
-#include "log/submit_result.h"
 #include "proto/ct.pb.h"
 
 class FrontendSigner;
@@ -22,6 +19,8 @@ class Frontend {
   // Takes ownership of the signer.
   Frontend(FrontendSigner* signer);
   ~Frontend();
+  Frontend(const Frontend&) = delete;
+  Frontend& operator=(const Frontend&) = delete;
 
   util::Status QueueProcessedEntry(util::Status pre_status,
                                    const ct::LogEntry& entry,
@@ -29,7 +28,6 @@ class Frontend {
 
  private:
   const std::unique_ptr<FrontendSigner> signer_;
-
-  DISALLOW_COPY_AND_ASSIGN(Frontend);
 };
-#endif
+
+#endif  // CERT_TRANS_LOG_FRONTEND_H_

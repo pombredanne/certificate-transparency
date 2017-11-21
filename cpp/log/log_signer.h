@@ -1,5 +1,5 @@
-#ifndef LOG_SIGNER_H
-#define LOG_SIGNER_H
+#ifndef CERT_TRANS_LOG_LOG_SIGNER_H_
+#define CERT_TRANS_LOG_LOG_SIGNER_H_
 
 #include <openssl/evp.h>
 #include <openssl/x509.h>  // for i2d_PUBKEY
@@ -53,7 +53,8 @@ class LogSigner : public cert_trans::Signer {
   SignResult SignTreeHead(ct::SignedTreeHead* sth) const;
 
  private:
-  static SignResult GetSerializeError(SerializeResult result);
+  static SignResult GetSerializeError(
+      cert_trans::serialization::SerializeResult result);
 };
 
 class LogSigVerifier : public cert_trans::Verifier {
@@ -103,8 +104,11 @@ class LogSigVerifier : public cert_trans::Verifier {
   VerifyResult VerifySTHSignature(const ct::SignedTreeHead& sth) const;
 
  private:
-  static VerifyResult GetSerializeError(SerializeResult result);
+  static VerifyResult GetSerializeError(
+      cert_trans::serialization::SerializeResult result);
 
-  static VerifyResult GetDeserializeSignatureError(DeserializeResult result);
+  static VerifyResult GetDeserializeSignatureError(
+      cert_trans::serialization::DeserializeResult result);
 };
-#endif
+
+#endif  // CERT_TRANS_LOG_LOG_SIGNER_H_

@@ -15,6 +15,7 @@
 #include "log/test_signer.h"
 #include "merkletree/merkle_verifier.h"
 #include "merkletree/serial_hasher.h"
+#include "proto/cert_serializer.h"
 #include "proto/ct.pb.h"
 #include "proto/serializer.h"
 #include "util/fake_etcd.h"
@@ -60,7 +61,8 @@ class FrontendSignerTest : public ::testing::Test {
       : test_db_(),
         test_signer_(),
         verifier_(TestSigner::DefaultLogSigVerifier(),
-                  new MerkleVerifier(new Sha256Hasher())),
+                  new MerkleVerifier(
+                      unique_ptr<Sha256Hasher>(new Sha256Hasher))),
         base_(make_shared<libevent::Base>()),
         event_pump_(base_),
         etcd_client_(base_.get()),
@@ -83,7 +85,7 @@ class FrontendSignerTest : public ::testing::Test {
   FakeEtcdClient etcd_client_;
   ThreadPool pool_;
   NiceMock<MockMasterElection> election_;
-  EtcdConsistentStore<LoggedEntry> store_;
+  EtcdConsistentStore store_;
   unique_ptr<LogSigner> log_signer_;
   FS frontend_;
 };
@@ -255,5 +257,6 @@ TYPED_TEST(FrontendSignerTest, TimedVerify) {
 
 int main(int argc, char** argv) {
   cert_trans::test::InitTesting(argv[0], &argc, &argv, true);
+  ConfigureSerializerForV1CT();
   return RUN_ALL_TESTS();
 }

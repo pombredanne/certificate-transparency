@@ -2,8 +2,10 @@
 
 INSTALL_DIR?=$(shell pwd)/install
 export INSTALL_DIR
+PKG_CONFIG_PATH=$(shell pwd)/install/lib/pkgconfig
+export PKG_CONFIG_PATH
 
-PHONY: libunwind tcmalloc openssl protobuf libevent libevhtp gflags glog ldns sqlite3 leveldb json-c configure-ct
+PHONY: libunwind tcmalloc objecthash boringssl openssl protobuf libevent libevhtp gflags glog ldns sqlite3 leveldb json-c configure-ct
 
 all: configure-ct
 
@@ -16,6 +18,15 @@ _libunwind:
 _tcmalloc:
 	$(MAKE) -C tcmalloc -f ../certificate-transparency/build/Makefile.tcmalloc
 	cd tcmalloc && git checkout --
+
+_icu4c:
+	$(MAKE) -C icu4c/source -f `pwd`/certificate-transparency/build/Makefile.icu4c
+
+_objecthash:
+	$(MAKE) -C certificate-transparency/third_party/objecthash -f `pwd`/certificate-transparency/build/Makefile.objecthash
+
+_boringssl:
+	$(MAKE) -C boringssl -f `pwd`/certificate-transparency/build/Makefile.boringssl
 
 _openssl:
 	$(MAKE) -C openssl -f `pwd`/certificate-transparency/build/Makefile.openssl

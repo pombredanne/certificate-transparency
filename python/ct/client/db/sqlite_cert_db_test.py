@@ -2,6 +2,8 @@
 
 import unittest
 
+import sys
+from absl import flags as gflags
 from ct.client.db import sqlite_connection as sqlitecon
 from ct.client.db import sqlite_cert_db
 from ct.client.db import cert_db_test
@@ -14,4 +16,5 @@ class SQLiteCertDBTest(unittest.TestCase, cert_db_test.CertDBTest):
         return self.database
 
 if __name__ == '__main__':
+    sys.argv = gflags.FLAGS(sys.argv)
     unittest.main()

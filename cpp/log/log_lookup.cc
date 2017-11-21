@@ -38,7 +38,7 @@ static const int kCtimeBufSize = 26;
 
 LogLookup::LogLookup(ReadOnlyDatabase* db)
     : db_(CHECK_NOTNULL(db)),
-      cert_tree_(new Sha256Hasher),
+      cert_tree_(unique_ptr<Sha256Hasher>(new Sha256Hasher)),
       latest_tree_head_(),
       update_from_sth_cb_(bind(&LogLookup::UpdateFromSTH, this, _1)) {
   db_->AddNotifySTHCallback(&update_from_sth_cb_);
@@ -205,7 +205,7 @@ unique_ptr<CompactMerkleTree> LogLookup::GetCompactMerkleTree(
     SerialHasher* hasher) {
   lock_guard<mutex> lock(lock_);
   return unique_ptr<CompactMerkleTree>(
-      new CompactMerkleTree(cert_tree_, hasher));
+      new CompactMerkleTree(&cert_tree_, unique_ptr<SerialHasher>(hasher)));
 }
 
 

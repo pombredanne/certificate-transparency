@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef UTIL_STATUSOR_H__
-#define UTIL_STATUSOR_H__
+#ifndef CERT_TRANS_UTIL_STATUSOR_H_
+#define CERT_TRANS_UTIL_STATUSOR_H_
+
+#include <utility>
 
 #include "glog/logging.h"
 #include "util/status.h"
@@ -32,9 +34,13 @@ class StatusOr {
 
   // Builds from the specified value.
   inline StatusOr(const T& value);  // NOLINT
+  inline StatusOr(T&& value);       // NOLINT
 
   // Copy constructor.
   inline StatusOr(const StatusOr& other);
+
+  // Move constructor.
+  inline StatusOr(StatusOr&& other);
 
   // Conversion copy constructor, T must be copy constructible from U.
   template <typename U>
@@ -62,6 +68,10 @@ class StatusOr {
     CHECK(ok()) << "Attempting to fetch value of non-OK StatusOr";
     return value_;
   }
+  inline T& ValueOrDie() {
+    CHECK(ok()) << "Attempting to fetch value of non-OK StatusOr";
+    return value_;
+  }
 
   template <typename U>
   friend class StatusOr;
@@ -79,7 +89,7 @@ inline StatusOr<T>::StatusOr() : status_(::util::error::UNKNOWN, "") {
 
 template <typename T>
 inline StatusOr<T>::StatusOr(const ::util::Status& status) : status_(status) {
-  CHECK(!status.ok()) << "Status::OK is not a valid argument to StatusOr";
+  CHECK(!status.ok()) << "::util::OkStatus() is not a valid argument to StatusOr";
 }
 
 template <typename T>
@@ -87,8 +97,17 @@ inline StatusOr<T>::StatusOr(const T& value) : value_(value) {
 }
 
 template <typename T>
+inline StatusOr<T>::StatusOr(T&& value) : value_(std::move(value)) {
+}
+
+template <typename T>
 inline StatusOr<T>::StatusOr(const StatusOr& other)
     : status_(other.status_), value_(other.value_) {
+}
+
+template <typename T>
+inline StatusOr<T>::StatusOr(StatusOr&& other)
+    : status_(other.status_), value_(std::move(other.value_)) {
 }
 
 template <typename T>
@@ -118,4 +137,4 @@ inline const StatusOr<T>& StatusOr<T>::operator=(const StatusOr<U>& other) {
 
 }  // namespace util
 
-#endif  // UTIL_STATUSOR_H__
+#endif  // CERT_TRANS_UTIL_STATUSOR_H_

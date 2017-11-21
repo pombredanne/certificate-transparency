@@ -1,29 +1,29 @@
 #!/usr/bin/env python
 # coding=utf-8
-import time
 import unittest
+
+import time
+import sys
+from absl import flags as gflags
 from ct.client.db import cert_desc
 from ct.crypto import cert
-from ct.cert_analysis import all_checks
-from ct.cert_analysis import observation
+from ct.test import test_config
 from ct.test import time_utils
 
-CERT = cert.Certificate.from_der_file("ct/crypto/testdata/google_cert.der")
-CA_CERT = cert.Certificate.from_pem_file("ct/crypto/testdata/verisign_intermediate.pem")
-DSA_SHA256_CERT = cert.Certificate.from_der_file("ct/crypto/testdata/dsa_with_sha256.der")
+CERT = cert.Certificate.from_der_file(
+        test_config.get_test_file_path("google_cert.der"))
+CA_CERT = cert.Certificate.from_pem_file(
+        test_config.get_test_file_path("verisign_intermediate.pem"))
+DSA_SHA256_CERT = cert.Certificate.from_der_file(
+        test_config.get_test_file_path("dsa_with_sha256.der"))
+BAD_UTF8_CERT = cert.Certificate.from_pem_file(
+        test_config.get_test_file_path("cert_bad_utf8_subject.pem"))
+DOMAIN_IN_ISSUER_CERT = cert.Certificate.from_pem_file(
+        test_config.get_test_file_path("domain_in_issuer.pem"))
+DOMAIN_IN_O_COMPONENT = cert.Certificate.from_pem_file(
+        test_config.get_test_file_path("domain_in_o_component.pem"))
 
 class CertificateDescriptionTest(unittest.TestCase):
-    def get_observations(self, source):
-        observations = []
-
-        for check in all_checks.ALL_CHECKS:
-            observations += check.check(source) or []
-
-        observations.append(observation.Observation(
-            "AE", u'ćę©ß→æ→ćąßę-ß©ąńśþa©ęńć←', (u'əę”ąłęµ', u'…łą↓ð→↓ś→ę')))
-
-        return observations
-
     def assert_description_subject_matches_source(self, proto, source):
         subject = [(att.type, att.value) for att in proto.subject]
         cert_subject = [(type_.short_name,
@@ -62,15 +62,6 @@ class CertificateDescriptionTest(unittest.TestCase):
         self.assertEqual(time.gmtime(proto.validity.not_after / 1000),
                          source.not_after())
 
-    def assert_description_observations_match_source(self, proto, observations):
-        observations_tuples = [(unicode(obs.description),
-                                unicode(obs.reason) if obs.reason else u'',
-                                obs.details_to_proto())
-                               for obs in observations]
-        proto_obs = [(obs.description, obs.reason, obs.details)
-                     for obs in proto.observations]
-        self.assertItemsEqual(proto_obs, observations_tuples)
-
     def assert_description_signature_matches_source(self, proto, source):
         self.assertEqual(proto.tbs_signature.algorithm_id,
                          source.signature()["algorithm"].long_name)
@@ -95,8 +86,7 @@ class CertificateDescriptionTest(unittest.TestCase):
                          proto.cert_signature.parameters)
 
     def assert_description_matches_source(self, source, expect_ca_true):
-        observations = self.get_observations(source)
-        proto = cert_desc.from_cert(source, observations)
+        proto = cert_desc.from_cert(source)
 
         self.assertEqual(proto.der, source.to_der())
         self.assert_description_subject_matches_source(proto, source)
@@ -105,7 +95,6 @@ class CertificateDescriptionTest(unittest.TestCase):
         self.assertEqual(proto.version, str(source.version().value))
         self.assert_description_serial_number_matches_source(proto, source)
         self.assert_description_validity_dates_match_source(proto, source)
-        self.assert_description_observations_match_source(proto, observations)
         self.assert_description_signature_matches_source(proto, source)
         self.assertEqual(proto.basic_constraint_ca, expect_ca_true)
 
@@ -151,6 +140,32 @@ class CertificateDescriptionTest(unittest.TestCase):
         with time_utils.timezone("Asia/Shanghai"):
             self.assert_description_matches_source(cert, is_ca_cert)
 
+    def test_cert_with_mangled_utf8(self):
+        cert = BAD_UTF8_CERT
+        is_ca_cert = False
+
+        with time_utils.timezone("UTC"):
+            self.assert_description_matches_source(cert, is_ca_cert)
+
+        # Test in non-UTC timezones, to detect timezone issues
+        with time_utils.timezone("America/Los_Angeles"):
+            self.assert_description_matches_source(cert, is_ca_cert)
+
+        with time_utils.timezone("Asia/Shanghai"):
+            self.assert_description_matches_source(cert, is_ca_cert)
+
+        proto = cert_desc.from_cert(cert)
+
+    def test_does_not_reverse_domain_names_in_ou(self):
+        ou = [t for t in cert_desc.from_cert(DOMAIN_IN_ISSUER_CERT).issuer
+              if t.type == "OU"][0]
+        self.assertEqual("www.digicert.com", ou.value)
+
+    def test_does_not_reverse_domain_names_in_o_component(self):
+        ou = [t for t in cert_desc.from_cert(DOMAIN_IN_O_COMPONENT).subject
+              if t.type == "O"][0]
+        self.assertEqual("go-greenevents.com", ou.value)
+
     def test_process_value(self):
         self.assertEqual(["London"], cert_desc.process_name("London"))
         self.assertEqual(["Bob Smith"], cert_desc.process_name("Bob Smith"))
@@ -166,5 +181,16 @@ class CertificateDescriptionTest(unittest.TestCase):
         self.assertEqual(["1", "0", "168", "192"],
                          cert_desc.process_name("192.168.0.1"))
 
+    def test_to_unicode(self):
+        self.assertEqual(u"foobar", cert_desc.to_unicode("foobar"))
+        # The given string is encoded using ISO-8859-1, not UTF-8.
+        # Assuming it is UTF-8 yields invalid Unicode \uDBE0.
+        self.assertNotEqual(u"R\uDBE0S", cert_desc.to_unicode("R\xED\xAF\xA0S"))
+        # Detecting the failure and retrying as ISO-8859-1.
+        self.assertEqual(u"R\u00ED\u00AF\u00A0S",
+                         cert_desc.to_unicode("R\xED\xAF\xA0S"))
+
+
 if __name__ == "__main__":
+    sys.argv = gflags.FLAGS(sys.argv)
     unittest.main()

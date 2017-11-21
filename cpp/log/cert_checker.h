@@ -1,16 +1,15 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef CERT_CHECKER_H
-#define CERT_CHECKER_H
+#ifndef CERT_TRANS_LOG_CERT_CHECKER_H_
+#define CERT_TRANS_LOG_CERT_CHECKER_H_
 
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
 #include "log/cert.h"
 #include "util/status.h"
 #include "util/statusor.h"
@@ -32,8 +31,9 @@ class PreCertChain;
 class CertChecker {
  public:
   CertChecker() = default;
-
-  virtual ~CertChecker();
+  virtual ~CertChecker() = default;
+  CertChecker(const CertChecker&) = delete;
+  CertChecker& operator=(const CertChecker&) = delete;
 
   // Load a file of concatenated PEM-certs.
   // Returns true if at least one certificate was successfully loaded, and no
@@ -47,9 +47,7 @@ class CertChecker {
   virtual bool LoadTrustedCertificates(
       const std::vector<std::string>& trusted_certs);
 
-  virtual void ClearAllTrustedCertificates();
-
-  virtual const std::multimap<std::string, const Cert*>&
+  virtual const std::multimap<std::string, std::unique_ptr<const Cert>>&
   GetTrustedCertificates() const {
     return trusted_;
   }
@@ -98,15 +96,13 @@ class CertChecker {
   // A map by the DER encoding of the subject name.
   // All code manipulating this container must ensure contained elements are
   // deallocated appropriately.
-  std::multimap<std::string, const Cert*> trusted_;
+  std::multimap<std::string, std::unique_ptr<const Cert>> trusted_;
 
   // Helper for LoadTrustedCertificates, whether reading from file or memory.
   // Takes ownership of bio_in and frees it.
   bool LoadTrustedCertificatesFromBIO(BIO* bio_in);
-
-  DISALLOW_COPY_AND_ASSIGN(CertChecker);
 };
 
 }  // namespace cert_trans
 
-#endif
+#endif  // CERT_TRANS_LOG_CERT_CHECKER_H_

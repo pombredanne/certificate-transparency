@@ -1,10 +1,9 @@
-#ifndef FRONTEND_SIGNER_H
-#define FRONTEND_SIGNER_H
+#ifndef CERT_TRANS_LOG_FRONTEND_SIGNER_H_
+#define CERT_TRANS_LOG_FRONTEND_SIGNER_H_
 
 #include <stdint.h>
 #include <string>
 
-#include "base/macros.h"
 #include "log/consistent_store.h"
 #include "log/logged_entry.h"
 
@@ -22,9 +21,10 @@ class Database;
 class FrontendSigner {
  public:
   // Does not take ownership of |db|, |store| or |signer|.
-  FrontendSigner(cert_trans::Database* db,
-                 cert_trans::ConsistentStore<cert_trans::LoggedEntry>* store,
+  FrontendSigner(cert_trans::Database* db, cert_trans::ConsistentStore* store,
                  LogSigner* signer);
+  FrontendSigner(const FrontendSigner&) = delete;
+  FrontendSigner& operator=(const FrontendSigner&) = delete;
 
   // Log the entry if it's not already in the database,
   // and return either a new timestamp-signature pair,
@@ -38,9 +38,8 @@ class FrontendSigner {
                         ct::SignedCertificateTimestamp* sct) const;
 
   cert_trans::Database* const db_;
-  cert_trans::ConsistentStore<cert_trans::LoggedEntry>* const store_;
+  cert_trans::ConsistentStore* const store_;
   LogSigner* const signer_;
-
-  DISALLOW_COPY_AND_ASSIGN(FrontendSigner);
 };
-#endif
+
+#endif  // CERT_TRANS_LOG_FRONTEND_SIGNER_H_

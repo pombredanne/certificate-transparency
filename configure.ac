@@ -27,7 +27,6 @@ AC_PROG_LN_S
 AC_PROG_RANLIB
 AM_PROG_AR
 AX_CXX_COMPILE_STDCXX_11
-AC_CHECK_PROGS([ANT], [ant])
 
 PKG_CHECK_MODULES([json_c], [json-c])
 PKG_CHECK_MODULES([evhtp], [evhtp])
@@ -71,7 +70,10 @@ AC_CHECK_HEADER([google/protobuf/message.h],,
                 [AC_MSG_ERROR([protobuf headers could not be found])])
 AC_CHECK_HEADER([leveldb/db.h],,
                 [AC_MSG_ERROR([leveldb headers could not be found])])
+AC_CHECK_HEADER([sqlite3.h],,
+                [AC_MSG_ERROR([sqlite3 headers could not be found])])
 AC_CHECK_HEADER([ldns/ldns.h],, [missing_ldns=yes])
+AC_CHECK_HEADER([objecthash.h],, [missing_objecthash=yes])
 
 # Check for working GTest/GMock.
 saved_CPPFLAGS="$CPPFLAGS"
@@ -104,14 +106,14 @@ AC_SEARCH_LIBS([clock_gettime], [rt],,, [$save_LIBS])
 
 AC_MSG_CHECKING([checking for gflags library])
 LIBS="-lgflags $LIBS"
-AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <gflags/gflags.h>], [google::ParseCommandLineFlags(NULL, NULL, true)])], [have_gflags=yes], [have_gflags=no])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <gflags/gflags.h>]], [[google::ParseCommandLineFlags(NULL, NULL, true)]])], [have_gflags=yes], [have_gflags=no])
 AC_MSG_RESULT([$have_gflags])
 AS_IF([test "x$have_gflags" = "xno"],
       [AC_MSG_ERROR([gflags library could not be found])])
 
 AC_MSG_CHECKING([checking for glog library])
 LIBS="-lglog $LIBS"
-AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <glog/logging.h>], [google::InitGoogleLogging(NULL)])], [have_glog=yes], [have_glog=no])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <glog/logging.h>]], [[google::InitGoogleLogging(NULL)]])], [have_glog=yes], [have_glog=no])
 AC_MSG_RESULT([$have_glog])
 AS_IF([test "x$have_glog" = "xno"],
       [AC_MSG_ERROR([glog library could not be found])])
@@ -125,6 +127,14 @@ AS_IF([test -n "$missing_leveldb"],
       [AC_MSG_ERROR([could not find the leveldb/snappy libraries])])
 LIBS="$save_LIBS"
 
+save_LIBS="$LIBS"
+AS_UNSET([LIBS])
+AC_SEARCH_LIBS([sqlite3_open], [sqlite3],, [missing_sqlite3=1], [$save_LIBS])
+AC_SUBST([sqlite3_LIBS], [$LIBS])
+AS_IF([test -n "$missing_sqlite3"],
+      [AC_MSG_ERROR([could not find the sqlite3 library])])
+LIBS="$save_LIBS"
+
 dnl We're pretty crypto-centric, having the OpenSSL libraries in LIBS
 dnl is fine.
 AC_SEARCH_LIBS([CRYPTO_set_locking_callback], [crypto],, [missing_openssl=1],
@@ -132,6 +142,17 @@ AC_SEARCH_LIBS([CRYPTO_set_locking_callback], [crypto],, [missing_openssl=1],
 AC_SEARCH_LIBS([SSL_CTX_new], [ssl],, [missing_openssl=1], [$save_LIBS])
 AS_IF([test -n "$missing_openssl"],
       [AC_MSG_ERROR([could not find the OpenSSL libraries])])
+
+AC_MSG_CHECKING([for BoringSSL])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <openssl/base.h>]],
+                                   [[
+                                     #ifndef OPENSSL_IS_BORINGSSL
+                                     # error not boringssl
+                                     #endif
+                                   ]])
+                  ],
+                  [AC_MSG_RESULT([yes]); openssl_is_boringssl=1],
+                  [AC_MSG_RESULT([no])])
 
 save_LIBS="$LIBS"
 AS_UNSET([LIBS])
@@ -172,13 +193,13 @@ AC_TYPE_UINT64_T
 AC_TYPE_UINT8_T
 
 CT_CHECK_TLS
-AC_CHECK_DECLS([INADDR_LOOPBACK], [], [], [#include <netinet/in.h>])
+AC_CHECK_DECLS([INADDR_LOOPBACK], [], [], [[#include <netinet/in.h>]])
 
 AC_MSG_CHECKING([whether pthread_t is a pointer])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <pthread.h>
 void TakesPointer(void*);
-], [TakesPointer(pthread_self())])], [PTHREAD_T_IS_POINTER=yes],
+]], [[TakesPointer(pthread_self())]])], [PTHREAD_T_IS_POINTER=yes],
    [PTHREAD_T_IS_POINTER=no])
 AC_MSG_RESULT([$PTHREAD_T_IS_POINTER])
 AS_IF([test "x$PTHREAD_T_IS_POINTER" = xyes],
@@ -195,8 +216,9 @@ AC_CHECK_FUNCS([alarm gettimeofday memset mkdir select socket strdup strerror st
 # the user.
 
 
-AM_CONDITIONAL([HAVE_ANT], [test -n "$ANT"])
 AM_CONDITIONAL([HAVE_LDNS], [test -z "$missing_ldns"])
+AM_CONDITIONAL([HAVE_OBJECTHASH], [test -z "$missing_objecthash"])
+AM_CONDITIONAL([OPENSSL_IS_BORINGSSL], [test -n "$openssl_is_boringssl"])
 AC_DEFINE_UNQUOTED([TEST_SRCDIR], ["$srcdir"], [Top of the source directory, for tests.])
 AC_SUBST([INSTALL_DIR])
 AC_CONFIG_FILES([Makefile])

@@ -1,11 +1,9 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef SSL_CLIENT_H
-#define SSL_CLIENT_H
+#ifndef CERT_TRANS_CLIENT_SSL_CLIENT_H_
+#define CERT_TRANS_CLIENT_SSL_CLIENT_H_
 
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
-#include "base/macros.h"
 #include "client/client.h"
 #include "client/ssl_client.h"
 #include "log/log_verifier.h"
@@ -22,10 +20,12 @@ class SSLClient {
   // Takes ownership of the verifier. This client can currently
   // only verify SCTs from a single log at a time.
   // TODO(ekasper): implement a proper multi-log auditor.
-  SSLClient(const std::string& server, uint16_t port,
+  SSLClient(const std::string& server, const std::string& port,
             const std::string& ca_dir, LogVerifier* verifier);
 
   ~SSLClient();
+  SSLClient(const SSLClient&) = delete;
+  SSLClient& operator=(const SSLClient&) = delete;
 
   enum HandshakeResult {
     OK = 0,
@@ -104,11 +104,9 @@ class SSLClient {
   void ResetVerifyCallbackArgs(bool strict);
 
   HandshakeResult SSLConnect(bool strict);
-
-  DISALLOW_COPY_AND_ASSIGN(SSLClient);
 };
 
 
 }  // namespace cert_trans
 
-#endif
+#endif  // CERT_TRANS_CLIENT_SSL_CLIENT_H_

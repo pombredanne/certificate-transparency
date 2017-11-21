@@ -12,6 +12,7 @@
 
 #include "config.h"
 #include "log/ct_extensions.h"
+#include "proto/cert_serializer.h"
 #include "version.h"
 
 using std::string;

@@ -1,19 +1,17 @@
 #!/usr/bin/env python
 # coding=utf-8
 
-import gflags
-import time
 import unittest
-import sys
+
+import time
 from ct.crypto import cert
 from ct.crypto import error
 from ct.crypto.asn1 import oid
+from ct.crypto.asn1 import x509_common
 from ct.crypto.asn1 import x509_extension as x509_ext
 from ct.crypto.asn1 import x509_name
-
-FLAGS = gflags.FLAGS
-gflags.DEFINE_string("testdata_dir", "ct/crypto/testdata",
-                     "Location of test certs")
+from ct.crypto.asn1 import x509
+from ct.test import test_config
 
 class CertificateTest(unittest.TestCase):
     _PEM_FILE = "google_cert.pem"
@@ -110,10 +108,10 @@ class CertificateTest(unittest.TestCase):
 
     @property
     def pem_file(self):
-        return FLAGS.testdata_dir + "/" + self._PEM_FILE
+        return test_config.get_test_file_path(self._PEM_FILE)
 
     def get_file(self, filename):
-        return FLAGS.testdata_dir + "/" + filename
+        return test_config.get_test_file_path(filename)
 
     def cert_from_pem_file(self, filename, strict=True):
         return cert.Certificate.from_pem_file(
@@ -728,6 +726,14 @@ class CertificateTest(unittest.TestCase):
                                oid.ID_CE_CRL_DISTRIBUTION_POINTS),
                               extensions_oids)
 
+    def test_tbscertificate(self):
+        c = self.cert_from_pem_file(self._PEM_FILE)
+        tbs = c.tbscertificate()
+        self.assertTrue(isinstance(tbs, x509.TBSCertificate))
+        self.assertEqual(
+                x509_common.CertificateSerialNumber(454887626504608315115709L),
+                tbs["serialNumber"])
+
     def test_indefinite_encoding(self):
         self.assertRaises(error.ASN1Error, self.cert_from_pem_file,
                           self._PEM_INDEFINITE_LENGTH)
@@ -744,5 +750,4 @@ class CertificateTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    sys.argv = FLAGS(sys.argv)
     unittest.main()

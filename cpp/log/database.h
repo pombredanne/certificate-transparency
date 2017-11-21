@@ -1,6 +1,5 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef DATABASE_H
-#define DATABASE_H
+#ifndef CERT_TRANS_LOG_DATABASE_H_
+#define CERT_TRANS_LOG_DATABASE_H_
 
 #include <glog/logging.h>
 #include <stdint.h>
@@ -8,7 +7,6 @@
 #include <memory>
 #include <set>
 
-#include "base/macros.h"
 #include "log/logged_entry.h"
 #include "proto/ct.pb.h"
 
@@ -40,16 +38,17 @@ class ReadOnlyDatabase {
    public:
     Iterator() = default;
     virtual ~Iterator() = default;
+    Iterator(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&) = delete;
 
     // If there is an entry available, fill *entry and return true,
     // otherwise return false.
     virtual bool GetNextEntry(LoggedEntry* entry) = 0;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(Iterator);
   };
 
   virtual ~ReadOnlyDatabase() = default;
+  ReadOnlyDatabase(const ReadOnlyDatabase&) = delete;
+  ReadOnlyDatabase& operator=(const ReadOnlyDatabase&) = delete;
 
   // Look up by hash. If the entry exists write the result. If the
   // entry is not logged return NOT_FOUND.
@@ -88,9 +87,6 @@ class ReadOnlyDatabase {
 
  protected:
   ReadOnlyDatabase() = default;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ReadOnlyDatabase);
 };
 
 
@@ -112,6 +108,8 @@ class Database : public ReadOnlyDatabase {
   };
 
   virtual ~Database() = default;
+  Database(const Database&) = delete;
+  Database& operator=(const Database&) = delete;
 
   // Attempt to create a new entry with the status LOGGED.
   // Fail if an entry with this hash already exists.
@@ -137,9 +135,6 @@ class Database : public ReadOnlyDatabase {
   // documentation.
   virtual WriteResult CreateSequencedEntry_(const LoggedEntry& logged) = 0;
   virtual WriteResult WriteTreeHead_(const ct::SignedTreeHead& sth) = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(Database);
 };
 
 
@@ -149,6 +144,8 @@ class DatabaseNotifierHelper {
 
   DatabaseNotifierHelper() = default;
   ~DatabaseNotifierHelper();
+  DatabaseNotifierHelper(const DatabaseNotifierHelper&) = delete;
+  DatabaseNotifierHelper& operator=(const DatabaseNotifierHelper&) = delete;
 
   void Add(const NotifySTHCallback* callback);
   void Remove(const NotifySTHCallback* callback);
@@ -158,11 +155,9 @@ class DatabaseNotifierHelper {
   typedef std::set<const NotifySTHCallback*> Map;
 
   Map callbacks_;
-
-  DISALLOW_COPY_AND_ASSIGN(DatabaseNotifierHelper);
 };
 
 
 }  // namespace cert_trans
 
-#endif  // DATABASE_H
+#endif  // CERT_TRANS_LOG_DATABASE_H_

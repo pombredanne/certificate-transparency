@@ -17,19 +17,21 @@ class CertificateHttpHandler : public HttpHandler {
   // in which case this server will not accept "add-chain" and "add-pre-chain"
   // requests.
   CertificateHttpHandler(LogLookup* log_lookup, const ReadOnlyDatabase* db,
-                         const ClusterStateController<LoggedEntry>* controller,
+                         const ClusterStateController* controller,
                          const CertChecker* cert_checker, Frontend* frontend,
                          ThreadPool* pool, libevent::Base* event_base,
                          StalenessTracker* staleness_tracker);
 
   ~CertificateHttpHandler() = default;
+  CertificateHttpHandler(const CertificateHttpHandler&) = delete;
+  CertificateHttpHandler& operator=(const CertificateHttpHandler&) = delete;
 
  protected:
   void AddHandlers(libevent::HttpServer* server) override;
 
  private:
   const CertChecker* const cert_checker_;
-  const CertSubmissionHandler submission_handler_;
+  const std::unique_ptr<CertSubmissionHandler> submission_handler_;
   Frontend* const frontend_;
 
   void GetRoots(evhttp_request* req) const;
@@ -40,8 +42,6 @@ class CertificateHttpHandler : public HttpHandler {
                         const std::shared_ptr<CertChain>& chain) const;
   void BlockingAddPreChain(evhttp_request* req,
                            const std::shared_ptr<PreCertChain>& chain) const;
-
-  DISALLOW_COPY_AND_ASSIGN(CertificateHttpHandler);
 };
 
 

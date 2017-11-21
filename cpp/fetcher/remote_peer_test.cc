@@ -19,6 +19,7 @@
 #include "merkletree/serial_hasher.h"
 #include "monitoring/monitoring.h"
 #include "net/mock_url_fetcher.h"
+#include "proto/cert_serializer.h"
 #include "util/fake_etcd.h"
 #include "util/json_wrapper.h"
 #include "util/mock_masterelection.h"
@@ -99,8 +100,8 @@ class RemotePeerTest : public ::testing::Test {
         store_(base_.get(), &pool_, &etcd_client_, &election_, "/root", "id"),
         log_signer_(TestSigner::DefaultLogSigner()),
         tree_signer_(std::chrono::duration<double>(0), test_db_.db(),
-                     unique_ptr<CompactMerkleTree>(
-                         new CompactMerkleTree(new Sha256Hasher)),
+                     unique_ptr<CompactMerkleTree>(new CompactMerkleTree(
+                         unique_ptr<Sha256Hasher>(new Sha256Hasher))),
                      &store_, log_signer_.get()),
         task_(&pool_) {
     FLAGS_remote_peer_sth_refresh_interval_seconds = 1;
@@ -116,9 +117,9 @@ class RemotePeerTest : public ::testing::Test {
     peer_.reset(new RemotePeer(
         unique_ptr<AsyncLogClient>(
             new AsyncLogClient(&pool_, &fetcher_, kLogUrl)),
-        unique_ptr<LogVerifier>(
-            new LogVerifier(TestSigner::DefaultLogSigVerifier(),
-                            new MerkleVerifier(new Sha256Hasher))),
+        unique_ptr<LogVerifier>(new LogVerifier(
+            TestSigner::DefaultLogSigVerifier(),
+            new MerkleVerifier(unique_ptr<Sha256Hasher>(new Sha256Hasher)))),
         bind(&RemotePeerTest::OnNewSTH, this, _1), task_.task()));
   }
 
@@ -164,7 +165,7 @@ class RemotePeerTest : public ::testing::Test {
                                                     _, ""),
                                   _, _))
           .WillOnce(
-              Invoke(bind(&HandleFetch, Status::OK, 200, UrlFetcher::Headers{},
+              Invoke(bind(&HandleFetch, ::util::OkStatus(), 200, UrlFetcher::Headers{},
                           Jsonify(return_sth), _1, _2, _3)));
     } else {
       EXPECT_CALL(fetcher_, Fetch(IsUrlFetchRequest(UrlFetcher::Verb::GET,
@@ -173,7 +174,7 @@ class RemotePeerTest : public ::testing::Test {
                                                     _, ""),
                                   _, _))
           .WillRepeatedly(
-              Invoke(bind(&HandleFetch, Status::OK, 200, UrlFetcher::Headers{},
+              Invoke(bind(&HandleFetch, ::util::OkStatus(), 200, UrlFetcher::Headers{},
                           Jsonify(return_sth), _1, _2, _3)));
     }
   }
@@ -181,7 +182,7 @@ class RemotePeerTest : public ::testing::Test {
   void ReturnLatestSTH(const UrlFetcher::Request& req,
                        UrlFetcher::Response* resp, Task* task) {
     tree_signer_.UpdateTree();
-    HandleFetch(Status::OK, 200, UrlFetcher::Headers{},
+    HandleFetch(::util::OkStatus(), 200, UrlFetcher::Headers{},
                 Jsonify(tree_signer_.LatestSTH()), req, resp, task);
   }
 
@@ -192,10 +193,10 @@ class RemotePeerTest : public ::testing::Test {
   TestDB<LevelDB> test_db_;
   ThreadPool pool_;
   NiceMock<MockMasterElection> election_;
-  cert_trans::EtcdConsistentStore<LoggedEntry> store_;
+  cert_trans::EtcdConsistentStore store_;
   TestSigner test_signer_;
   unique_ptr<LogSigner> log_signer_;
-  TreeSigner<LoggedEntry> tree_signer_;
+  TreeSigner tree_signer_;
   SyncTask task_;
   MockUrlFetcher fetcher_;
   unique_ptr<RemotePeer> peer_;
@@ -286,5 +287,6 @@ TEST_F(RemotePeerTest, RejectsSTHWithInvalidSignature) {
 
 int main(int argc, char** argv) {
   cert_trans::test::InitTesting(argv[0], &argc, &argv, true);
+  ConfigureSerializerForV1CT();
   return RUN_ALL_TESTS();
 }

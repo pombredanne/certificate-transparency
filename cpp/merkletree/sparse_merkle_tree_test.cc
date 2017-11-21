@@ -81,7 +81,7 @@ pair<ScopedBIGNUM, string> Value(uint64_t n, const string& v) {
 class Reference {
  public:
   Reference(SerialHasher* hasher)
-      : tree_hasher_(CHECK_NOTNULL(hasher)),
+      : tree_hasher_(unique_ptr<SerialHasher>(CHECK_NOTNULL(hasher))),
         hStarEmptyCache_{tree_hasher_.HashLeaf("")} {
   }
 
@@ -98,7 +98,7 @@ class Reference {
     // b) I want it to be as similar as possible to the code in the paper.
 
     ScopedBIGNUM offset(BN_new());
-    CHECK_EQ(1, BN_zero(offset.get()));
+    BN_zero(offset.get());
     const string ret(
         HStar2b(n, *values, values->begin(), values->end(), offset.get()));
     return ret;
@@ -156,9 +156,9 @@ class Reference {
 class SparseMerkleTreeTest : public testing::Test {
  public:
   SparseMerkleTreeTest()
-      : tree_hasher_(new Sha256Hasher),
-        tree_(new Sha256Hasher()),
-        rand_({1234}) {
+      : tree_hasher_(unique_ptr<Sha256Hasher>(new Sha256Hasher)),
+        tree_(new Sha256Hasher),
+        rand_(1234) {
   }
 
  protected:
@@ -187,7 +187,7 @@ class SparseMerkleTreeTest : public testing::Test {
   // Returns a random Path.
   SparseMerkleTree::Path RandomPath() {
     SparseMerkleTree::Path ret;
-    for (int i(0); i < ret.size(); ++i) {
+    for (SparseMerkleTree::Path::size_type i(0); i < ret.size(); ++i) {
       ret[i] = rand_() & 0xff;
     }
     return ret;
@@ -236,7 +236,7 @@ TEST_F(SparseMerkleTreeTest, SimpleTest) {
   ValueList values;
   for (auto r : vector<uint64_t>{1, 5, 10}) {
     const string value(to_string(r));
-    values.emplace_back(std::move(Value(r, value)));
+    values.emplace_back(Value(r, value));
     SparseMerkleTree::Path p(PathLow(r));
     tree_.SetLeaf(p, value);
   }
@@ -254,7 +254,7 @@ TEST_F(SparseMerkleTreeTest, RandomReferenceTest) {
   for (int i(0); i < 10000; ++i) {
     uint64_t r(rand_() + i);
     const string value(to_string(r));
-    values.emplace_back(std::move(Value(r, value)));
+    values.emplace_back(Value(r, value));
     const SparseMerkleTree::Path p(PathLow(r));
     tree_.SetLeaf(p, value);
   }
@@ -280,7 +280,7 @@ TEST_F(SparseMerkleTreeTest, DISABLED_RefMemTest) {
   for (int i(0); i < 10000000; ++i) {
     uint64_t r(rand_() + i);
     const string value(to_string(r));
-    values.emplace_back(std::move(Value(r, value)));
+    values.emplace_back(Value(r, value));
   }
   LOG(INFO) << "Calculating Root";
   const string ref_root(ref.HStar2(256, &values));

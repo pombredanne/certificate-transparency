@@ -7,7 +7,7 @@ import sys
 
 import json
 import logging
-import gflags
+from absl import flags as gflags
 
 from ct.client import log_client
 from ct.crypto import cert
@@ -25,9 +25,9 @@ gflags.DEFINE_string("log_list", None, "File containing the list of logs "
 gflags.DEFINE_string("chain", None, "Certificate chain to submit (PEM).")
 gflags.DEFINE_string("log_scheme", "http", "Log scheme (http/https)")
 gflags.DEFINE_string("output", None, "output file for sct_list")
-gflags.MarkFlagAsRequired("log_list")
-gflags.MarkFlagAsRequired("chain")
-gflags.MarkFlagAsRequired("output")
+gflags.mark_flag_as_required("log_list")
+gflags.mark_flag_as_required("chain")
+gflags.mark_flag_as_required("output")
 
 def _read_ct_log_list(log_list_file):
     """Parses the log list JSON, returns a log url to key map."""
@@ -56,10 +56,8 @@ def _map_log_id_to_verifier(log_list):
     """Returns a map from log id to verifier object from the log_list."""
     log_id_to_verifier = {}
     for log_key in log_list.values():
+        key_info = verify.create_key_info_from_raw_key(log_key)
         key_id = hashlib.sha256(log_key).digest()
-        key_info = client_pb2.KeyInfo()
-        key_info.type = client_pb2.KeyInfo.ECDSA
-        key_info.pem_key = pem.to_pem(log_key, 'PUBLIC KEY')
         log_id_to_verifier[key_id] = verify.LogVerifier(key_info)
     return log_id_to_verifier
 

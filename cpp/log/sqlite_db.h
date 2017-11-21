@@ -1,11 +1,9 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef SQLITE_DB_H
-#define SQLITE_DB_H
+#ifndef CERT_TRANS_LOG_SQLITE_DB_H_
+#define CERT_TRANS_LOG_SQLITE_DB_H_
 
 #include <mutex>
 #include <string>
 
-#include "base/macros.h"
 #include "log/database.h"
 #include "log/logged_entry.h"
 
@@ -19,6 +17,8 @@ class SQLiteDB : public Database {
   explicit SQLiteDB(const std::string& dbfile);
 
   ~SQLiteDB();
+  SQLiteDB(const SQLiteDB&) = delete;
+  SQLiteDB& operator=(const SQLiteDB&) = delete;
 
   typedef Database::WriteResult WriteResult;
   typedef Database::LookupResult LookupResult;
@@ -84,11 +84,9 @@ class SQLiteDB : public Database {
   DatabaseNotifierHelper callbacks_;
   int64_t transaction_size_;
   bool in_transaction_;
-
-  DISALLOW_COPY_AND_ASSIGN(SQLiteDB);
 };
 
 
 }  // namespace cert_trans
 
-#endif
+#endif  // CERT_TRANS_LOG_SQLITE_DB_H_

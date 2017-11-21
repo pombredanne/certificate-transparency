@@ -17,8 +17,8 @@
 // github.com/google/lmctfy with a few minor modifications mainly to reduce the
 // dependencies.
 
-#ifndef UTIL_STATUS_H__
-#define UTIL_STATUS_H__
+#ifndef CERT_TRANS_UTIL_STATUS_H_
+#define CERT_TRANS_UTIL_STATUS_H_
 
 #include <string>
 
@@ -181,7 +181,9 @@ extern ::std::ostream& operator<<(::std::ostream& os,
                                   ::util::error::Code code);
 extern ::std::ostream& operator<<(::std::ostream& os, const Status& other);
 
+// Returns an OK status, equivalent to a default constructed instance.
+inline Status OkStatus() { return Status(); }
 
 }  // namespace util
 
-#endif  // UTIL_STATUS_H__
+#endif  // CERT_TRANS_UTIL_STATUS_H_

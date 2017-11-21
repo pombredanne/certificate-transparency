@@ -18,7 +18,6 @@ namespace cert_trans {
 
 class CertChain;
 class CertChecker;
-template <class T>
 class ClusterStateController;
 class LogLookup;
 class LoggedEntry;
@@ -33,10 +32,12 @@ class HttpHandlerV2 {
   // Does not take ownership of its parameters, which must outlive
   // this instance.
   HttpHandlerV2(LogLookup* log_lookup, const ReadOnlyDatabase* db,
-                const ClusterStateController<LoggedEntry>* controller,
-                ThreadPool* pool, libevent::Base* event_base,
+                const ClusterStateController* controller, ThreadPool* pool,
+                libevent::Base* event_base,
                 StalenessTracker* staleness_tracker);
   virtual ~HttpHandlerV2();
+  HttpHandlerV2(const HttpHandlerV2&) = delete;
+  HttpHandlerV2& operator=(const HttpHandlerV2&) = delete;
 
   void Add(libevent::HttpServer* server);
 
@@ -67,13 +68,11 @@ class HttpHandlerV2 {
 
   LogLookup* const log_lookup_;
   const ReadOnlyDatabase* const db_;
-  const ClusterStateController<LoggedEntry>* const controller_;
+  const ClusterStateController* const controller_;
   Proxy* proxy_;
   ThreadPool* const pool_;
   libevent::Base* const event_base_;
   StalenessTracker* const staleness_tracker_;
-
-  DISALLOW_COPY_AND_ASSIGN(HttpHandlerV2);
 };
 
 

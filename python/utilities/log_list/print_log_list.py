@@ -6,18 +6,20 @@ import hashlib
 import json
 import os
 import sys
+import time
 
-import gflags
+from absl import flags as gflags
 import jsonschema
 import M2Crypto
 
 from cpp_generator import generate_cpp_header
 from java_generator import generate_java_source
+from openssl_generator import generate_openssl_conf
 
 FLAGS = gflags.FLAGS
 
 gflags.DEFINE_string("log_list", None, "Logs list file to parse and print.")
-gflags.MarkFlagAsRequired("log_list")
+gflags.mark_flag_as_required("log_list")
 gflags.DEFINE_string("signature", None, "Signature file over the list of logs.")
 gflags.DEFINE_string("signer_key", None, "Public key of the log list signer.")
 gflags.DEFINE_string("log_list_schema",
@@ -30,6 +32,8 @@ gflags.DEFINE_string("java_output", None,
                      "If specifed, generates Java code.")
 gflags.DEFINE_string("java_class", "org.conscrypt.ct.KnownLogs",
                      "Fully qualified name of the generated class.")
+gflags.DEFINE_string("openssl_output", None,
+                     "If specified, generates a CONF file for OpenSSL.")
 gflags.DEFINE_boolean("skip_signature_check", False,
                      "Skip signature check (only validate schema).")
 
@@ -73,7 +77,13 @@ def print_formatted_log_list(json_log_list):
         hasher = hashlib.sha256()
         hasher.update(key)
         key_hash = hasher.digest()
-        print "  Key ID: %s" % (base64.encodestring(key_hash))
+        print "  Key ID: %s" % (base64.encodestring(key_hash)),
+        if "final_sth" in log_info:
+            final_sth = log_info["final_sth"]
+            print "  Log is frozen as of %s, final tree size %d" % (
+                time.asctime(time.gmtime(final_sth["timestamp"] / 1000.0)),
+                final_sth["tree_size"])
+        print "-" * 80
 
 def run():
     with open(FLAGS.log_list, "rb") as f:
@@ -92,8 +102,12 @@ def run():
         generate_cpp_header(parsed_json, FLAGS.header_output)
     if FLAGS.java_output:
         generate_java_source(parsed_json, FLAGS.java_output, FLAGS.java_class)
+    if FLAGS.openssl_output:
+        generate_openssl_conf(parsed_json, FLAGS.openssl_output)
 
-    if not FLAGS.header_output and not FLAGS.java_output:
+    if not FLAGS.header_output and \
+       not FLAGS.java_output and \
+       not FLAGS.openssl_output:
         print_formatted_log_list(parsed_json)
 
 

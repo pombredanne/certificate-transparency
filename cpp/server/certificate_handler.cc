@@ -13,6 +13,7 @@ using ct::LogEntry;
 using ct::SignedCertificateTimestamp;
 using std::bind;
 using std::make_shared;
+using std::move;
 using std::multimap;
 using std::placeholders::_1;
 using std::shared_ptr;
@@ -57,18 +58,26 @@ bool ExtractChain(libevent::Base* base, evhttp_request* req,
       return false;
     }
 
-    unique_ptr<Cert> cert(new Cert);
-    cert->LoadFromDerString(json_cert.FromBase64());
-    if (!cert->IsLoaded()) {
+    unique_ptr<Cert> cert(Cert::FromDerString(json_cert.FromBase64()));
+    if (!cert) {
       SendJsonError(base, req, HTTP_BADREQUEST,
                     "Unable to parse provided chain.");
       return false;
     }
 
-    chain->AddCert(cert.release());
+    chain->AddCert(move(cert));
   }
 
   return true;
+}
+
+
+CertSubmissionHandler* MaybeCreateSubmissionHandler(
+    const CertChecker* checker) {
+  if (checker != nullptr) {
+    return new CertSubmissionHandler(checker);
+  }
+  return nullptr;
 }
 
 
@@ -77,13 +86,13 @@ bool ExtractChain(libevent::Base* base, evhttp_request* req,
 
 CertificateHttpHandler::CertificateHttpHandler(
     LogLookup* log_lookup, const ReadOnlyDatabase* db,
-    const ClusterStateController<LoggedEntry>* controller,
-    const CertChecker* cert_checker, Frontend* frontend, ThreadPool* pool,
-    libevent::Base* event_base, StalenessTracker* staleness_tracker)
+    const ClusterStateController* controller, const CertChecker* cert_checker,
+    Frontend* frontend, ThreadPool* pool, libevent::Base* event_base,
+    StalenessTracker* staleness_tracker)
     : HttpHandler(log_lookup, db, controller, pool, event_base,
                   staleness_tracker),
-      cert_checker_(CHECK_NOTNULL(cert_checker)),
-      submission_handler_(cert_checker_),
+      cert_checker_(cert_checker),
+      submission_handler_(MaybeCreateSubmissionHandler(cert_checker_)),
       frontend_(frontend) {
 }
 
@@ -116,11 +125,9 @@ void CertificateHttpHandler::GetRoots(evhttp_request* req) const {
   }
 
   JsonArray roots;
-  multimap<string, const Cert*>::const_iterator it;
-  for (it = cert_checker_->GetTrustedCertificates().begin();
-       it != cert_checker_->GetTrustedCertificates().end(); ++it) {
+  for (const auto& trusted_cert : cert_checker_->GetTrustedCertificates()) {
     string cert;
-    if (it->second->DerEncoding(&cert) != util::Status::OK) {
+    if (trusted_cert.second->DerEncoding(&cert) != ::util::OkStatus()) {
       LOG(ERROR) << "Cert encoding failed";
       return SendJsonError(event_base_, req, HTTP_INTERNAL,
                            "Serialisation failed.");
@@ -163,7 +170,7 @@ void CertificateHttpHandler::BlockingAddChain(
 
   LogEntry entry;
   const Status status(frontend_->QueueProcessedEntry(
-      submission_handler_.ProcessX509Submission(chain.get(), &entry), entry,
+      submission_handler_->ProcessX509Submission(chain.get(), &entry), entry,
       &sct));
 
   AddEntryReply(req, status, sct);
@@ -176,8 +183,8 @@ void CertificateHttpHandler::BlockingAddPreChain(
 
   LogEntry entry;
   const Status status(frontend_->QueueProcessedEntry(
-      submission_handler_.ProcessPreCertSubmission(chain.get(), &entry), entry,
-      &sct));
+      submission_handler_->ProcessPreCertSubmission(chain.get(), &entry),
+      entry, &sct));
 
   AddEntryReply(req, status, sct);
 }

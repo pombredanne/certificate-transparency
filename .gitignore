@@ -68,6 +68,7 @@
 /cpp/monitoring/registry_test
 /cpp/net/url_fetcher_test
 /cpp/proto/serializer_test
+/cpp/proto/serializer_v2_test
 /cpp/server/blob-server
 /cpp/server/ct-dns-server
 /cpp/server/ct-mirror
@@ -95,6 +96,7 @@
 /cpp/util/sync_task_test
 /cpp/util/task_test
 /cpp/util/thread_pool_test
+/cpp/version.cc
 /depcomp
 /install-sh
 /java/build
@@ -119,9 +121,15 @@
 /test/testdata/urlfetcher_test_certs/
 
 # IntelliJ artefacts
+/java/.idea
 /java/.idea/dictionaries/
 /java/.idea/workspace.xml
 /java/out
+/java/target
+/java/ctlog.iml
+
+# maven litter
+/java/src/test/resources/testdata
 
 # Eclipse artefacts
 /java/.classpath

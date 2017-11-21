@@ -1,175 +1,42 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef SERIALIZER_H
-#define SERIALIZER_H
+#ifndef CERT_TRANS_PROTO_SERIALIZER_H_
+#define CERT_TRANS_PROTO_SERIALIZER_H_
 
 #include <glog/logging.h>
 #include <google/protobuf/repeated_field.h>
 #include <stdint.h>
+#include <functional>
 #include <string>
 
-#include "base/macros.h"
 #include "proto/ct.pb.h"
+#include "proto/tls_encoding.h"
 
-
-// Serialization methods return OK on success,
-// or the first encountered error on failure.
-enum class SerializeResult {
-  OK,
-  INVALID_ENTRY_TYPE,
-  EMPTY_CERTIFICATE,
-  // TODO(alcutter): rename these to LEAFDATA_TOO_LONG or similar?
-  CERTIFICATE_TOO_LONG,
-  CERTIFICATE_CHAIN_TOO_LONG,
-  INVALID_HASH_ALGORITHM,
-  INVALID_SIGNATURE_ALGORITHM,
-  SIGNATURE_TOO_LONG,
-  INVALID_HASH_LENGTH,
-  EMPTY_PRECERTIFICATE_CHAIN,
-  UNSUPPORTED_VERSION,
-  EXTENSIONS_TOO_LONG,
-  INVALID_KEYID_LENGTH,
-  EMPTY_LIST,
-  EMPTY_ELEM_IN_LIST,
-  LIST_ELEM_TOO_LONG,
-  LIST_TOO_LONG,
-  EXTENSIONS_NOT_ORDERED,
-};
-
-std::ostream& operator<<(std::ostream& stream, const SerializeResult& r);
-
-
-enum class DeserializeResult {
-  OK,
-  INPUT_TOO_SHORT,
-  INVALID_HASH_ALGORITHM,
-  INVALID_SIGNATURE_ALGORITHM,
-  INPUT_TOO_LONG,
-  UNSUPPORTED_VERSION,
-  INVALID_LIST_ENCODING,
-  EMPTY_LIST,
-  EMPTY_ELEM_IN_LIST,
-  UNKNOWN_LEAF_TYPE,
-  UNKNOWN_LOGENTRY_TYPE,
-  EXTENSIONS_TOO_LONG,
-  EXTENSIONS_NOT_ORDERED,
-};
-
-std::ostream& operator<<(std::ostream& stream, const DeserializeResult& r);
-
-typedef google::protobuf::RepeatedPtrField<std::string> repeated_string;
+typedef google::protobuf::RepeatedPtrField<ct::SthExtension>
+    repeated_sth_extension;
 typedef google::protobuf::RepeatedPtrField<ct::SctExtension>
     repeated_sct_extension;
 
-SerializeResult CheckExtensionsFormat(const std::string& extensions);
-SerializeResult CheckSctExtensionsFormat(
+cert_trans::serialization::SerializeResult CheckExtensionsFormat(
+    const std::string& extensions);
+cert_trans::serialization::SerializeResult CheckKeyHashFormat(
+    const std::string& key_hash);
+cert_trans::serialization::SerializeResult CheckSctExtensionsFormat(
     const repeated_sct_extension& extension);
 
-// TODO(pphaneuf): Make this into normal functions in a namespace.
-class TLSSerializer {
- public:
-  // returns binary data
-  std::string SerializedString() const {
-    return output_;
-  }
+void WriteSctExtension(const repeated_sct_extension& extension,
+                       std::string* output);
 
-  SerializeResult WriteSCTV1(const ct::SignedCertificateTimestamp& sct);
+cert_trans::serialization::DeserializeResult ReadExtensionsV1(
+    TLSDeserializer* deserializer, ct::TimestampedEntry* entry);
 
-  SerializeResult WriteSCTV2(const ct::SignedCertificateTimestamp& sct);
+cert_trans::serialization::DeserializeResult ReadSCT(
+    TLSDeserializer* deserializer, ct::SignedCertificateTimestamp* sct);
 
-  SerializeResult WriteList(const repeated_string& in, size_t max_elem_length,
-                            size_t max_total_length);
-
-  SerializeResult WriteDigitallySigned(const ct::DigitallySigned& sig);
-
-
-  template <class T>
-  void WriteUint(T in, size_t bytes) {
-    CHECK_LE(bytes, sizeof(in));
-    CHECK(bytes == sizeof(in) || in >> (bytes * 8) == 0);
-    for (; bytes > 0; --bytes)
-      output_.push_back(((in & (static_cast<T>(0xff) << ((bytes - 1) * 8))) >>
-                         ((bytes - 1) * 8)));
-  }
-
-  // Fixed-length byte array.
-  void WriteFixedBytes(const std::string& in);
-
-  // Variable-length byte array.
-  // Caller is responsible for checking |in| <= max_length
-  // TODO(ekasper): could return a bool instead.
-  void WriteVarBytes(const std::string& in, size_t max_length);
-
-  void WriteSctExtension(const repeated_sct_extension& extension);
-
- private:
-  std::string output_;
-};
-
-
-class TLSDeserializer {
- public:
-  // We do not make a copy, so input must remain valid.
-  // TODO(pphaneuf): And so we should take a string *, not a string &
-  // (which could be to a temporary, and not valid once the
-  // constructor returns).
-  explicit TLSDeserializer(const std::string& input);
-
-  bool ReachedEnd() const {
-    return bytes_remaining_ == 0;
-  }
-
-  DeserializeResult ReadSCT(ct::SignedCertificateTimestamp* sct);
-
-  DeserializeResult ReadList(size_t max_total_length, size_t max_elem_length,
-                             repeated_string* out);
-
-  DeserializeResult ReadDigitallySigned(ct::DigitallySigned* sig);
-
-  DeserializeResult ReadMerkleTreeLeaf(ct::MerkleTreeLeaf* leaf);
-  bool ReadVarBytes(size_t max_length, std::string* result);
-
-  template <class T>
-  bool ReadUint(size_t bytes, T* result) {
-    if (bytes_remaining_ < bytes)
-      return false;
-    T res = 0;
-    for (size_t i = 0; i < bytes; ++i) {
-      res = (res << 8) | static_cast<unsigned char>(*current_pos_);
-      ++current_pos_;
-    }
-
-    bytes_remaining_ -= bytes;
-    *result = res;
-    return true;
-  }
-
- private:
-  static const size_t kV2ExtensionCountLengthInBytes;
-  static const size_t kV2ExtensionTypeLengthInBytes;
-
-  DeserializeResult ReadSctExtension(repeated_sct_extension* extension);
-  DeserializeResult ReadExtensions(ct::TimestampedEntry* entry);
-  DeserializeResult ReadMerkleTreeLeafV1(ct::MerkleTreeLeaf* leaf);
-  DeserializeResult ReadMerkleTreeLeafV2(ct::MerkleTreeLeaf* leaf);
-  DeserializeResult ReadSCTV1(ct::SignedCertificateTimestamp* sct);
-  DeserializeResult ReadSCTV2(ct::SignedCertificateTimestamp* sct);
-  bool ReadFixedBytes(size_t bytes, std::string* result);
-  bool ReadLengthPrefix(size_t max_length, size_t* result);
-
-  const char* current_pos_;
-  size_t bytes_remaining_;
-
-  DISALLOW_COPY_AND_ASSIGN(TLSDeserializer);
-};
+cert_trans::serialization::DeserializeResult ReadMerkleTreeLeaf(
+    TLSDeserializer* deserializer, ct::MerkleTreeLeaf* leaf);
 
 // A utility class for writing protocol buffer fields in canonical TLS style.
 class Serializer {
  public:
-  typedef google::protobuf::RepeatedPtrField<std::string> repeated_string;
-
-  static const size_t kMaxCertificateLength;
-  static const size_t kMaxCertificateChainLength;
-  static const size_t kMaxSignatureLength;
   static const size_t kMaxV2ExtensionType;
   static const size_t kMaxV2ExtensionsCount;
   static const size_t kMaxExtensionsLength;
@@ -178,8 +45,6 @@ class Serializer {
 
   static const size_t kLogEntryTypeLengthInBytes;
   static const size_t kSignatureTypeLengthInBytes;
-  static const size_t kHashAlgorithmLengthInBytes;
-  static const size_t kSigAlgorithmLengthInBytes;
   static const size_t kVersionLengthInBytes;
   // Log Key ID
   static const size_t kKeyIDLengthInBytes;
@@ -188,231 +53,127 @@ class Serializer {
   static const size_t kKeyHashLengthInBytes;
   static const size_t kTimestampLengthInBytes;
 
-  static SerializeResult CheckLogEntryFormatV1(const ct::LogEntry& entry);
-  static SerializeResult CheckLogEntryFormatV2(const ct::LogEntry& entry);
+  // API
+  // TODO(alcutter): typedef these function<> bits
+  static void ConfigureV1(
+      const std::function<std::string(const ct::LogEntry&)>& leaf_data,
+      const std::function<cert_trans::serialization::SerializeResult(
+          const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
+          std::string* result)>& serialize_sct_sig_input,
+      const std::function<cert_trans::serialization::SerializeResult(
+          const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
+          std::string* result)>& serialize_sct_merkle_leaf);
 
-  // Helper method to hide some of the ugly select logic.
+  static void ConfigureV2(
+      const std::function<std::string(const ct::LogEntry&)>& leaf_data,
+      const std::function<cert_trans::serialization::SerializeResult(
+          const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
+          std::string* result)>& serialize_sct_sig_input,
+      const std::function<cert_trans::serialization::SerializeResult(
+          const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
+          std::string* result)>& serialize_sct_merkle_leaf);
+
   static std::string LeafData(const ct::LogEntry& entry);
 
-  static SerializeResult SerializeV1CertSCTSignatureInput(
-      uint64_t timestamp, const std::string& certificate,
-      const std::string& extensions, std::string* result);
-
-  static SerializeResult SerializeV2CertSCTSignatureInput(
-      uint64_t timestamp, const std::string& issuer_key_hash,
-      const std::string& tbs_certificate,
-      const repeated_sct_extension& sct_extension, std::string* result);
-
-  static SerializeResult SerializeV1PrecertSCTSignatureInput(
-      uint64_t timestamp, const std::string& issuer_key_hash,
-      const std::string& tbs_certificate, const std::string& extensions,
-      std::string* result);
-
-  static SerializeResult SerializeV2PrecertSCTSignatureInput(
-      uint64_t timestamp, const std::string& issuer_key_hash,
-      const std::string& tbs_certificate,
-      const repeated_sct_extension& sct_extension, std::string* result);
-
-  static SerializeResult SerializeV1XJsonSCTSignatureInput(
-      uint64_t timestamp, const std::string& json,
-      const std::string& extensions, std::string* result);
-
-  static SerializeResult SerializeSCTSignatureInputV1(
-      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
-      std::string* result);
-
-  static SerializeResult SerializeSCTSignatureInputV2(
-      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
-      std::string* result);
-
-  static SerializeResult SerializeSCTSignatureInput(
-      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
-      std::string* result);
-
-  static SerializeResult SerializeV1CertSCTMerkleTreeLeaf(
-      uint64_t timestamp, const std::string& certificate,
-      const std::string& extensions, std::string* result);
-
-  static SerializeResult SerializeV1PrecertSCTMerkleTreeLeaf(
-      uint64_t timestamp, const std::string& issuer_key_hash,
-      const std::string& tbs_certificate, const std::string& extensions,
-      std::string* result);
-
-  static SerializeResult SerializeV2CertSCTMerkleTreeLeaf(
-      uint64_t timestamp, const std::string& issuer_key_hash,
-      const std::string& tbs_certificate,
-      const repeated_sct_extension& sct_extension, std::string* result);
-
-  static SerializeResult SerializeV2PrecertSCTMerkleTreeLeaf(
-      uint64_t timestamp, const std::string& issuer_key_hash,
-      const std::string& tbs_certificate,
-      const repeated_sct_extension& sct_extension, std::string* result);
-
-  static SerializeResult SerializeV1XJsonSCTMerkleTreeLeaf(
-      uint64_t timestamp, const std::string& json,
-      const std::string& extensions, std::string* result);
-
-  static SerializeResult SerializeSCTMerkleTreeLeafV1(
-      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
-      std::string* result);
-
-  static SerializeResult SerializeSCTMerkleTreeLeafV2(
-      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
-      std::string* result);
-
-  static SerializeResult SerializeSCTMerkleTreeLeaf(
-      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
-      std::string* result);
-
-  static SerializeResult SerializeV1STHSignatureInput(
-      uint64_t timestamp, int64_t tree_size, const std::string& root_hash,
-      std::string* result);
-
-  static SerializeResult SerializeV2STHSignatureInput(
-      uint64_t timestamp, int64_t tree_size, const std::string& root_hash,
-      const google::protobuf::RepeatedPtrField<ct::SthExtension>&
-          sth_extension,
-      const std::string& log_id, std::string* result);
-
-  static SerializeResult SerializeSTHSignatureInput(
+  static cert_trans::serialization::SerializeResult SerializeSTHSignatureInput(
       const ct::SignedTreeHead& sth, std::string* result);
 
-  static SerializeResult SerializeSCT(
+  static cert_trans::serialization::SerializeResult SerializeSCTMerkleTreeLeaf(
+      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
+      std::string* result);
+
+  static cert_trans::serialization::SerializeResult SerializeSCTSignatureInput(
+      const ct::SignedCertificateTimestamp& sct, const ct::LogEntry& entry,
+      std::string* result);
+
+  static cert_trans::serialization::SerializeResult
+  SerializeV1STHSignatureInput(uint64_t timestamp, int64_t tree_size,
+                               const std::string& root_hash,
+                               std::string* result);
+
+  static cert_trans::serialization::SerializeResult
+  SerializeV2STHSignatureInput(uint64_t timestamp, int64_t tree_size,
+                               const std::string& root_hash,
+                               const repeated_sth_extension& sth_extension,
+                               const std::string& log_id, std::string* result);
+
+
+  // Random utils
+  static cert_trans::serialization::SerializeResult SerializeList(
+      const repeated_string& in, size_t max_elem_length,
+      size_t max_total_length, std::string* result);
+
+  static cert_trans::serialization::SerializeResult SerializeSCT(
       const ct::SignedCertificateTimestamp& sct, std::string* result);
 
-  static SerializeResult SerializeSCTList(
+  static cert_trans::serialization::SerializeResult SerializeSCTList(
       const ct::SignedCertificateTimestampList& sct_list, std::string* result);
 
-  // NB This serializes the certificate_chain component of the X509 chain only.
-  // Needed for the GetEntries flow.
-  static SerializeResult SerializeX509Chain(const ct::X509ChainEntry& entry,
-                                            std::string* result);
-
-  static SerializeResult SerializeX509ChainV1(
-      const repeated_string& certificate_chain, std::string* result);
-
-  static SerializeResult SerializePrecertChainEntry(
-      const ct::PrecertChainEntry& entry, std::string* result);
-
-  static SerializeResult SerializePrecertChainEntry(
-      const std::string& pre_certificate,
-      const repeated_string& precertificate_chain, std::string* result);
-
+  static cert_trans::serialization::SerializeResult SerializeDigitallySigned(
+      const ct::DigitallySigned& sig, std::string* result);
 
   // TODO(ekasper): tests for these!
   template <class T>
   static std::string SerializeUint(T in, size_t bytes = sizeof(T)) {
-    TLSSerializer serializer;
-    serializer.WriteUint(in, bytes);
-    return serializer.SerializedString();
+    std::string out;
+    cert_trans::serialization::WriteUint(in, bytes, &out);
+    return out;
   }
-
-  static SerializeResult SerializeDigitallySigned(
-      const ct::DigitallySigned& sig, std::string* result);
-
-  // entry_type + the signed_entry component of an SCT, in other words, the
-  // parts under the SCT signature that only depend on user input and not on
-  // fields the log adds (such as a timestamp)
-  static SerializeResult SerializeV1SignedEntryWithType(
-      const ct::LogEntry entry, std::string* result);
-
-  static SerializeResult SerializeV1SignedCertEntryWithType(
-      const std::string& leaf_certificate, std::string* result);
-
-  static SerializeResult SerializeV1SignedPrecertEntryWithType(
-      const std::string& issuer_key_hash, const std::string& tbs_certificate,
-      std::string* result);
-  static SerializeResult SerializeV2SignedPrecertEntryWithType(
-      const std::string& issuer_key_hash, const std::string& tbs_certificate,
-      std::string* result);
-
-  static SerializeResult SerializeV1SignedXJsonEntryWithType(
-      const std::string& json, std::string* result);
 
  private:
   // This class is mostly a namespace for static methods.
   // TODO(pphaneuf): Make this into normal functions in a namespace.
   Serializer() = delete;
-
-  // Serialize (with length prefix).
-  // FIXME(ekasper): for simplicity these reject if the list has empty
-  // elements (all our use cases are like this) but they should take in
-  // an arbitrary min bound instead.
-  static SerializeResult SerializeList(const repeated_string& in,
-                                       size_t max_elem_length,
-                                       size_t max_total_length,
-                                       std::string* result);
-  static SerializeResult CheckKeyHashFormat(const std::string& key_hash);
-
-  static SerializeResult CheckCertificateFormat(const std::string& cert);
-
-  static SerializeResult CheckSthExtensionsFormat(
-      const google::protobuf::RepeatedPtrField<ct::SthExtension>& extension);
-
-  static SerializeResult CheckChainFormat(const repeated_string& chain);
-
-  static SerializeResult CheckX509ChainEntryFormatV1(
-      const ct::X509ChainEntry& entry);
-  static SerializeResult CheckX509ChainEntryFormatV2(
-      const ct::X509ChainEntry& entry);
-
-  static SerializeResult CheckPrecertChainEntryFormatV1(
-      const ct::PrecertChainEntry& entry);
-  static SerializeResult CheckPrecertChainEntryFormatV2(
-      const ct::PrecertChainEntry& entry);
 };
+
 
 class Deserializer {
  public:
-  typedef Serializer::repeated_string repeated_string;
+  Deserializer(const Deserializer&) = delete;
+  Deserializer& operator=(const Deserializer&) = delete;
 
-  static DeserializeResult DeserializeSCT(const std::string& in,
-                                          ct::SignedCertificateTimestamp* sct);
+  static void Configure(
+      const std::function<cert_trans::serialization::DeserializeResult(
+          TLSDeserializer* d, ct::MerkleTreeLeaf* leaf)>&
+          read_merkle_tree_leaf_body);
 
-  static DeserializeResult DeserializeSCTList(
+  static cert_trans::serialization::DeserializeResult DeserializeSCT(
+      const std::string& in, ct::SignedCertificateTimestamp* sct);
+
+  static cert_trans::serialization::DeserializeResult DeserializeSCTList(
       const std::string& in, ct::SignedCertificateTimestampList* sct_list);
 
-  static DeserializeResult DeserializeDigitallySigned(
-      const std::string& in, ct::DigitallySigned* sig);
+  static cert_trans::serialization::DeserializeResult
+  DeserializeDigitallySigned(const std::string& in, ct::DigitallySigned* sig);
 
-  // Deserialize the certificate_chain component of an X509ChainEntry and plug
-  // it to the entry.
-  static DeserializeResult DeserializeX509Chain(
-      const std::string& in, ct::X509ChainEntry* x509_chain_entry);
+  // FIXME(ekasper): for simplicity these reject if the list has empty
+  // elements (all our use cases are like this) but they should take in
+  // an arbitrary min bound instead.
+  static cert_trans::serialization::DeserializeResult DeserializeList(
+      const std::string& in, size_t max_total_length, size_t max_elem_length,
+      repeated_string* out);
 
-  static DeserializeResult DeserializePrecertChainEntry(
-      const std::string& in, ct::PrecertChainEntry* precert_chain_entry);
-
-  static DeserializeResult DeserializeMerkleTreeLeaf(const std::string& in,
-                                                     ct::MerkleTreeLeaf* leaf);
+  static cert_trans::serialization::DeserializeResult
+  DeserializeMerkleTreeLeaf(const std::string& in, ct::MerkleTreeLeaf* leaf);
 
   // TODO(pphaneuf): Maybe the users of this should just use
   // TLSDeserializer directly?
   template <class T>
-  static DeserializeResult DeserializeUint(const std::string& in, size_t bytes,
-                                           T* result) {
+  static cert_trans::serialization::DeserializeResult DeserializeUint(
+      const std::string& in, size_t bytes, T* result) {
     TLSDeserializer deserializer(in);
     bool res = deserializer.ReadUint(bytes, result);
     if (!res)
-      return DeserializeResult::INPUT_TOO_SHORT;
+      return cert_trans::serialization::DeserializeResult::INPUT_TOO_SHORT;
     if (!deserializer.ReachedEnd())
-      return DeserializeResult::INPUT_TOO_LONG;
-    return DeserializeResult::OK;
+      return cert_trans::serialization::DeserializeResult::INPUT_TOO_LONG;
+    return cert_trans::serialization::DeserializeResult::OK;
   }
 
  private:
   // This class is mostly a namespace for static methods.
   // TODO(pphaneuf): Make this into normal functions in a namespace.
   Deserializer() = delete;
-
-  // FIXME(ekasper): for simplicity these reject if the list has empty
-  // elements (all our use cases are like this) but they should take in
-  // an arbitrary min bound instead.
-  static DeserializeResult DeserializeList(const std::string& in,
-                                           size_t max_total_length,
-                                           size_t max_elem_length,
-                                           repeated_string* out);
-
-  DISALLOW_COPY_AND_ASSIGN(Deserializer);
 };
-#endif
+
+#endif  // CERT_TRANS_PROTO_SERIALIZER_H_

@@ -1,13 +1,13 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef CERT_H
-#define CERT_H
+#ifndef CERT_TRANS_LOG_CERT_H_
+#define CERT_TRANS_LOG_CERT_H_
+
 #include <gtest/gtest_prod.h>
 #include <openssl/asn1.h>
 #include <openssl/x509.h>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "base/macros.h"
 #include "util/openssl_scoped_types.h"
 #include "util/statusor.h"
 
@@ -21,32 +21,25 @@ bool IsValidRedactedHost(const std::string& hostname);
 
 class Cert {
  public:
-  // Takes ownership of the X509 structure. It's advisable to check
-  // IsLoaded() after construction to verify the copy operation succeeded.
-  explicit Cert(X509* x509);
-  // May fail, but we don't want to die on invalid inputs,
-  // so caller should check IsLoaded() before doing anything else.
-  // All attempts to operate on an unloaded cert will fail with ERROR.
-  explicit Cert(const std::string& pem_string);
-  Cert() {
-  }
+  // The following factory static methods return null if the input is
+  // not valid.
+  static std::unique_ptr<Cert> FromDerString(const std::string& der_string);
+  // Caller still owns the BIO afterwards.
+  static std::unique_ptr<Cert> FromDerBio(BIO* bio_in);
+  static std::unique_ptr<Cert> FromPemString(const std::string& pem_string);
+  // Will return null if |x509| is null.
+  static std::unique_ptr<Cert> FromX509(ScopedX509 x509);
 
-  bool IsLoaded() const {
-    return x509_ != nullptr;
-  }
+  Cert() = delete;
+  Cert(const Cert&) = delete;
+  Cert& operator=(const Cert&) = delete;
 
-  // Never returns NULL but check IsLoaded() after Clone to verify the
-  // underlying copy succeeded.
-  Cert* Clone() const;
-
-  // Frees the old X509 and attempts to load a new one.
-  util::Status LoadFromDerString(const std::string& der_string);
-
-  // Frees the old X509 and attempts to load from BIO in DER form. Caller
-  // still owns the BIO afterwards.
-  util::Status LoadFromDerBio(BIO* bio_in);
+  // Returns null if there was a problem with the underlying copy.
+  std::unique_ptr<Cert> Clone() const;
 
   // These just return an empty string if an error occurs.
+  std::string PrintVersion() const;
+  std::string PrintSerialNumber() const;
   std::string PrintIssuerName() const;
   std::string PrintSubjectName() const;
   std::string PrintNotBefore() const;
@@ -147,11 +140,22 @@ class Cert {
   // Returns ERROR if the cert is not loaded.
   util::Status PublicKeySha256Digest(std::string* result) const;
 
+  // Sets the Subject Alternative Name dNSNames in |dns_alt_names|.
+  // Returns ::util::OkStatus() if the SAN dNSNames were extracted.
+  // Returns INVALID_ARGUMENT if the DAN dNSNames could not be extracted.
+  // Returns FAILED_PRECONDITION if the cert is not loaded.
+  util::Status SubjectAltNames(std::vector<std::string>* dns_alt_names) const;
+
   // Sets the SHA256 digest of the cert's subjectPublicKeyInfo in |result|.
   // Returns TRUE if computing the digest succeeded.
   // Returns FALSE if computing the digest failed.
   // Returns ERROR if the cert is not loaded.
   util::Status SPKISha256Digest(std::string* result) const;
+
+  // Get the cert's subjectPublicKeyInfo.
+  // Returns error INVALID_ARGUMENT if parsing the cert DER failed.
+  // Returns error FAILED_PRECONDITION if the cert is not loaded.
+  util::StatusOr<std::string> SPKI() const;
 
   // Fetch data from an extension if encoded as an ASN1_OCTET_STRING.
   // Useful for handling custom extensions registered with X509V3_EXT_add.
@@ -193,6 +197,9 @@ class Cert {
   FRIEND_TEST(CtExtensionsTest, TestPrecertSigning);
 
  private:
+  // Will CHECK-fail if |x509| is null.
+  explicit Cert(ScopedX509 x509);
+
   util::StatusOr<int> ExtensionIndex(int extension_nid) const;
   util::StatusOr<X509_EXTENSION*> GetExtension(int extension_nid) const;
   util::StatusOr<void*> ExtensionStructure(int extension_nid) const;
@@ -202,9 +209,7 @@ class Cert {
   static std::string PrintName(X509_NAME* name);
   static std::string PrintTime(ASN1_TIME* when);
   static util::Status DerEncodedName(X509_NAME* name, std::string* result);
-  ScopedX509 x509_;
-
-  DISALLOW_COPY_AND_ASSIGN(Cert);
+  const ScopedX509 x509_;
 };
 
 // A wrapper around X509_CINF for chopping at the TBS to CT-sign it or verify
@@ -214,6 +219,8 @@ class TbsCertificate {
  public:
   // TODO(ekasper): add construction from PEM and DER as needed.
   explicit TbsCertificate(const Cert& cert);
+  TbsCertificate(const TbsCertificate&) = delete;
+  TbsCertificate& operator=(const TbsCertificate&) = delete;
 
   bool IsLoaded() const {
     return x509_ != NULL;
@@ -251,14 +258,14 @@ class TbsCertificate {
   // OpenSSL does not expose a TBSCertificate API, so we keep the TBS wrapped
   // in the X509.
   ScopedX509 x509_;
-
-  DISALLOW_COPY_AND_ASSIGN(TbsCertificate);
 };
 
 
 class CertChain {
  public:
   CertChain() = default;
+  CertChain(const CertChain&) = delete;
+  CertChain& operator=(const CertChain&) = delete;
 
   // Loads a chain of PEM-encoded certificates. If any of the PEM-strings
   // in the chain are invalid, clears the entire chain.
@@ -267,11 +274,10 @@ class CertChain {
   explicit CertChain(const std::string& pem_string);
   ~CertChain();
 
-  // Takes ownership of the cert.
   // If the cert has a valid X509 structure, adds it to the end of the chain
   // and returns true.
   // Else returns false.
-  bool AddCert(Cert* cert);
+  bool AddCert(std::unique_ptr<Cert> cert);
 
   // Remove a cert from the end of the chain, if there is one.
   void RemoveCert();
@@ -295,17 +301,17 @@ class CertChain {
   Cert const* LeafCert() const {
     if (!IsLoaded())
       return NULL;
-    return chain_.front();
+    return chain_.front().get();
   }
 
   Cert const* CertAt(size_t position) const {
-    return chain_.size() <= position ? NULL : chain_[position];
+    return chain_.size() <= position ? NULL : chain_[position].get();
   }
 
   Cert const* LastCert() const {
     if (!IsLoaded())
       return NULL;
-    return chain_.back();
+    return chain_.back().get();
   }
 
   // Returns TRUE if the issuer of each cert is the subject of the
@@ -322,9 +328,7 @@ class CertChain {
 
  private:
   void ClearChain();
-  std::vector<Cert*> chain_;
-
-  DISALLOW_COPY_AND_ASSIGN(CertChain);
+  std::vector<std::unique_ptr<Cert>> chain_;
 };
 
 // Note: CT extensions must be loaded to use this class. See
@@ -376,4 +380,5 @@ class PreCertChain : public CertChain {
 };
 
 }  // namespace cert_trans
-#endif
+
+#endif  // CERT_TRANS_LOG_CERT_H_

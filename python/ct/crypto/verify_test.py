@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
-import base64
-import gflags
-import os
-import sys
 import unittest
 
+import base64
+import os
+import sys
+
+from absl import flags as gflags
 from ct.crypto import cert
 from ct.crypto import error
 from ct.crypto import pem
@@ -349,21 +350,17 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             sth_fixture.tree_head_signature[:i] +
             chr(ord(sth_fixture.tree_head_signature[i]) - 1) +
             sth_fixture.tree_head_signature[i+1:])
-        self.assertRaises(error.EncodingError, verifier.verify_sth, sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
         # Increasing the length means there are not enough ASN.1 bytes left to
-        # decode the sequence, however the ecdsa module silently slices it.
-        # Our ECDSA verifier checks for it and will fail.
+        # decode the sequence.
         sth = client_pb2.SthResponse()
         sth.CopyFrom(sth_fixture)
         sth.tree_head_signature = (
             sth_fixture.tree_head_signature[:i] +
             chr(ord(sth_fixture.tree_head_signature[i]) + 1) +
             sth_fixture.tree_head_signature[i+1:])
-        self.assertRaises(
-            error.EncodingError,
-            verifier.verify_sth,
-            sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
         # The byte that encodes the length of the first integer r in the
         # sequence (r, s). Modifying the length corrupts the second integer
@@ -375,7 +372,7 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             sth_fixture.tree_head_signature[:i] +
             chr(ord(sth_fixture.tree_head_signature[i]) - 1) +
             sth_fixture.tree_head_signature[i+1:])
-        self.assertRaises(error.EncodingError, verifier.verify_sth, sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
         sth = client_pb2.SthResponse()
         sth.CopyFrom(sth_fixture)
@@ -383,11 +380,11 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             sth_fixture.tree_head_signature[:i] +
             chr(ord(sth_fixture.tree_head_signature[i]) + 1) +
             sth_fixture.tree_head_signature[i+1:])
-        self.assertRaises(error.EncodingError, verifier.verify_sth, sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
         # The byte that encodes the length of the second integer s in the
-        # sequence (r, s). Increasing this length leaves bytes unread which
-        # is now also detected in the verify_ecdsa module.
+        # sequence (r, s). Modifying the length corrupts the integer and causes
+        # a decoding error.
         i = 42
         sth = client_pb2.SthResponse()
         sth.CopyFrom(sth_fixture)
@@ -395,7 +392,7 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             sth_fixture.tree_head_signature[:i] +
             chr(ord(sth_fixture.tree_head_signature[i]) - 1) +
             sth_fixture.tree_head_signature[i+1:])
-        self.assertRaises(error.EncodingError, verifier.verify_sth, sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
         sth = client_pb2.SthResponse()
         sth.CopyFrom(sth_fixture)
@@ -403,7 +400,7 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             sth_fixture.tree_head_signature[:i] +
             chr(ord(sth_fixture.tree_head_signature[i]) + 1) +
             sth_fixture.tree_head_signature[i+1:])
-        self.assertRaises(error.EncodingError, verifier.verify_sth, sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
         # Trailing garbage is correctly detected.
         sth = client_pb2.SthResponse()
@@ -413,7 +410,7 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             # Correct outer length to include trailing garbage.
             chr(ord(sth_fixture.tree_head_signature[3]) + 1) +
             sth_fixture.tree_head_signature[4:]) + "\x01"
-        self.assertRaises(error.EncodingError, verifier.verify_sth, sth)
+        self.assertRaises(error.SignatureError, verifier.verify_sth, sth)
 
     def test_verify_sth_for_bad_asn1_signature(self):
         # www.google.com certificate for which a bad SCT was issued.
@@ -462,7 +459,7 @@ class LogVerifierEcdsaTest(LogVerifierTest, unittest.TestCase):
             'PUBLIC KEY')
         verifier = verify.LogVerifier(key_info)
         self.assertRaises(
-            error.EncodingError,
+            error.SignatureError,
             verifier.verify_sct,
             symantec_sct,
             [cert.Certificate.from_pem("\n".join(google_cert)),])

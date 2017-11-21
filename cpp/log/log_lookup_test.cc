@@ -16,6 +16,7 @@
 #include "log/tree_signer.h"
 #include "merkletree/merkle_verifier.h"
 #include "merkletree/serial_hasher.h"
+#include "proto/cert_serializer.h"
 #include "util/fake_etcd.h"
 #include "util/mock_masterelection.h"
 #include "util/sync_task.h"
@@ -46,8 +47,6 @@ using std::string;
 using std::unique_ptr;
 using testing::NiceMock;
 
-typedef TreeSigner<LoggedEntry> TS;
-
 
 template <class T>
 class LogLookupTest : public ::testing::Test {
@@ -62,11 +61,12 @@ class LogLookupTest : public ::testing::Test {
         test_signer_(),
         log_signer_(TestSigner::DefaultLogSigner()),
         tree_signer_(std::chrono::duration<double>(0), db(),
-                     unique_ptr<CompactMerkleTree>(
-                         new CompactMerkleTree(new Sha256Hasher)),
+                     unique_ptr<CompactMerkleTree>(new CompactMerkleTree(
+                         unique_ptr<Sha256Hasher>(new Sha256Hasher))),
                      &store_, log_signer_.get()),
         verifier_(TestSigner::DefaultLogSigVerifier(),
-                  new MerkleVerifier(new Sha256Hasher())) {
+                  new MerkleVerifier(
+                      unique_ptr<Sha256Hasher>(new Sha256Hasher))) {
     // Set some noddy STH so that we can call UpdateTree on the Tree Signer.
     store_.SetServingSTH(ct::SignedTreeHead());
     // Force an empty sequence mapping file:
@@ -101,7 +101,7 @@ class LogLookupTest : public ::testing::Test {
 
     for (const auto& m : mapping.Entry().mapping()) {
       EntryHandle<LoggedEntry> entry;
-      CHECK_EQ(util::Status::OK,
+      CHECK_EQ(::util::OkStatus(),
                this->store_.GetPendingEntryForHash(m.entry_hash(), &entry));
       entry.MutableEntry()->set_sequence_number(m.sequence_number());
       CHECK_EQ(this->db()->OK,
@@ -109,7 +109,7 @@ class LogLookupTest : public ::testing::Test {
     }
 
     // then do the actual update.
-    EXPECT_EQ(TS::OK, this->tree_signer_.UpdateTree());
+    EXPECT_EQ(TreeSigner::OK, this->tree_signer_.UpdateTree());
     this->db()->WriteTreeHead(this->tree_signer_.LatestSTH());
   }
 
@@ -124,10 +124,10 @@ class LogLookupTest : public ::testing::Test {
   FakeEtcdClient etcd_client_;
   ThreadPool pool_;
   NiceMock<MockMasterElection> election_;
-  cert_trans::EtcdConsistentStore<LoggedEntry> store_;
+  cert_trans::EtcdConsistentStore store_;
   TestSigner test_signer_;
   unique_ptr<LogSigner> log_signer_;
-  TS tree_signer_;
+  TreeSigner tree_signer_;
   LogVerifier verifier_;
 };
 
@@ -234,5 +234,6 @@ TYPED_TEST(LogLookupTest, VerifyWithPath) {
 
 int main(int argc, char** argv) {
   cert_trans::test::InitTesting(argv[0], &argc, &argv, true);
+  ConfigureSerializerForV1CT();
   return RUN_ALL_TESTS();
 }

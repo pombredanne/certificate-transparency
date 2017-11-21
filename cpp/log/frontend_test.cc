@@ -20,6 +20,7 @@
 #include "log/test_signer.h"
 #include "merkletree/merkle_verifier.h"
 #include "merkletree/serial_hasher.h"
+#include "proto/cert_serializer.h"
 #include "proto/ct.pb.h"
 #include "util/fake_etcd.h"
 #include "util/libevent_wrapper.h"
@@ -93,7 +94,8 @@ class FrontendTest : public ::testing::Test {
       : test_db_(),
         test_signer_(),
         verifier_(TestSigner::DefaultLogSigVerifier(),
-                  new MerkleVerifier(new Sha256Hasher())),
+                  new MerkleVerifier(
+                      unique_ptr<Sha256Hasher>(new Sha256Hasher))),
         checker_(),
         base_(make_shared<libevent::Base>()),
         event_pump_(base_),
@@ -139,7 +141,7 @@ class FrontendTest : public ::testing::Test {
   FakeEtcdClient etcd_client_;
   ThreadPool pool_;
   NiceMock<MockMasterElection> election_;
-  EtcdConsistentStore<LoggedEntry> store_;
+  EtcdConsistentStore store_;
   unique_ptr<LogSigner> log_signer_;
   CertSubmissionHandler submission_handler_;
   FE frontend_;
@@ -171,10 +173,11 @@ TYPED_TEST(FrontendTest, TestSubmitValid) {
 
   // Look it up and expect to get the right thing back.
   EntryHandle<LoggedEntry> entry_handle;
-  Cert cert(this->leaf_pem_);
+  const unique_ptr<Cert> cert(Cert::FromPemString(this->leaf_pem_));
+  ASSERT_TRUE(cert.get());
 
   string sha256_digest;
-  ASSERT_OK(cert.Sha256Digest(&sha256_digest));
+  ASSERT_OK(cert->Sha256Digest(&sha256_digest));
   EXPECT_TRUE(
       this->store_.GetPendingEntryForHash(sha256_digest, &entry_handle).ok());
   const LoggedEntry& logged_cert(entry_handle.Entry());
@@ -182,7 +185,7 @@ TYPED_TEST(FrontendTest, TestSubmitValid) {
   EXPECT_EQ(ct::X509_ENTRY, logged_cert.entry().type());
   // Compare the leaf cert.
   string der_string;
-  ASSERT_OK(cert.DerEncoding(&der_string));
+  ASSERT_OK(cert->DerEncoding(&der_string));
   EXPECT_EQ(H(der_string),
             H(logged_cert.entry().x509_entry().leaf_certificate()));
 
@@ -203,10 +206,11 @@ TYPED_TEST(FrontendTest, TestSubmitValidWithIntermediate) {
       &sct));
 
   // Look it up and expect to get the right thing back.
-  Cert cert(this->chain_leaf_pem_);
+  const unique_ptr<Cert> cert(Cert::FromPemString(this->chain_leaf_pem_));
+  ASSERT_TRUE(cert.get());
 
   string sha256_digest;
-  ASSERT_OK(cert.Sha256Digest(&sha256_digest));
+  ASSERT_OK(cert->Sha256Digest(&sha256_digest));
   EntryHandle<LoggedEntry> entry_handle;
   EXPECT_TRUE(
       this->store_.GetPendingEntryForHash(sha256_digest, &entry_handle).ok());
@@ -215,7 +219,7 @@ TYPED_TEST(FrontendTest, TestSubmitValidWithIntermediate) {
   EXPECT_EQ(ct::X509_ENTRY, logged_cert.entry().type());
   // Compare the leaf cert.
   string der_string;
-  ASSERT_OK(cert.DerEncoding(&der_string));
+  ASSERT_OK(cert->DerEncoding(&der_string));
   EXPECT_EQ(H(der_string),
             H(logged_cert.entry().x509_entry().leaf_certificate()));
 
@@ -226,9 +230,10 @@ TYPED_TEST(FrontendTest, TestSubmitValidWithIntermediate) {
 
   // Compare the first intermediate.
   ASSERT_GE(logged_cert.entry().x509_entry().certificate_chain_size(), 1);
-  Cert cert2(this->intermediate_pem_);
+  const unique_ptr<Cert> cert2(Cert::FromPemString(this->intermediate_pem_));
+  ASSERT_TRUE(cert2.get());
 
-  ASSERT_OK(cert2.DerEncoding(&der_string));
+  ASSERT_OK(cert2->DerEncoding(&der_string));
   EXPECT_EQ(H(der_string),
             H(logged_cert.entry().x509_entry().certificate_chain(0)));
 }
@@ -251,10 +256,11 @@ TYPED_TEST(FrontendTest, TestSubmitDuplicate) {
               StatusIs(util::error::ALREADY_EXISTS, _));
 
   // Look it up and expect to get the right thing back.
-  Cert cert(this->leaf_pem_);
+  const unique_ptr<Cert> cert(Cert::FromPemString(this->leaf_pem_));
+  ASSERT_TRUE(cert.get());
 
   string sha256_digest;
-  ASSERT_OK(cert.Sha256Digest(&sha256_digest));
+  ASSERT_OK(cert->Sha256Digest(&sha256_digest));
   EntryHandle<LoggedEntry> entry_handle;
   EXPECT_TRUE(
       this->store_.GetPendingEntryForHash(sha256_digest, &entry_handle).ok());
@@ -263,7 +269,7 @@ TYPED_TEST(FrontendTest, TestSubmitDuplicate) {
   EXPECT_EQ(ct::X509_ENTRY, logged_cert.entry().type());
   // Compare the leaf cert.
   string der_string;
-  ASSERT_OK(cert.DerEncoding(&der_string));
+  ASSERT_OK(cert->DerEncoding(&der_string));
   EXPECT_EQ(H(der_string),
             H(logged_cert.entry().x509_entry().leaf_certificate()));
 
@@ -326,8 +332,10 @@ TYPED_TEST(FrontendTest, TestSubmitPrecert) {
   EntryHandle<LoggedEntry> entry_handle;
   EXPECT_TRUE(this->store_.GetPendingEntryForHash(hash, &entry_handle).ok());
   const LoggedEntry& logged_cert(entry_handle.Entry());
-  Cert pre(this->precert_pem_);
-  Cert ca(this->ca_pem_);
+  const unique_ptr<Cert> pre(Cert::FromPemString(this->precert_pem_));
+  const unique_ptr<Cert> ca(Cert::FromPemString(this->ca_pem_));
+  ASSERT_TRUE(pre.get());
+  ASSERT_TRUE(ca.get());
 
   EXPECT_EQ(ct::PRECERT_ENTRY, logged_cert.entry().type());
   // Verify the signature.
@@ -340,8 +348,8 @@ TYPED_TEST(FrontendTest, TestSubmitPrecert) {
             1);
 
   string pre_der, ca_der;
-  ASSERT_OK(pre.DerEncoding(&pre_der));
-  ASSERT_OK(ca.DerEncoding(&ca_der));
+  ASSERT_OK(pre->DerEncoding(&pre_der));
+  ASSERT_OK(ca->DerEncoding(&ca_der));
 
   EXPECT_EQ(H(pre_der),
             H(logged_cert.entry().precert_entry().pre_certificate()));
@@ -371,9 +379,13 @@ TYPED_TEST(FrontendTest, TestSubmitPrecertUsingPreCA) {
   EntryHandle<LoggedEntry> entry_handle;
   EXPECT_TRUE(this->store_.GetPendingEntryForHash(hash, &entry_handle).ok());
   const LoggedEntry& logged_cert(entry_handle.Entry());
-  Cert pre(this->precert_with_preca_pem_);
-  Cert ca_pre(this->ca_precert_pem_);
-  Cert ca(this->ca_pem_);
+  const unique_ptr<Cert> pre(
+      Cert::FromPemString(this->precert_with_preca_pem_));
+  const unique_ptr<Cert> ca_pre(Cert::FromPemString(this->ca_precert_pem_));
+  const unique_ptr<Cert> ca(Cert::FromPemString(this->ca_pem_));
+  ASSERT_TRUE(pre.get());
+  ASSERT_TRUE(ca_pre.get());
+  ASSERT_TRUE(ca.get());
 
   EXPECT_EQ(ct::PRECERT_ENTRY, logged_cert.entry().type());
   // Verify the signature.
@@ -386,9 +398,9 @@ TYPED_TEST(FrontendTest, TestSubmitPrecertUsingPreCA) {
             2);
 
   string pre_der, ca_der, ca_pre_der;
-  ASSERT_OK(pre.DerEncoding(&pre_der));
-  ASSERT_OK(ca.DerEncoding(&ca_der));
-  ASSERT_OK(ca_pre.DerEncoding(&ca_pre_der));
+  ASSERT_OK(pre->DerEncoding(&pre_der));
+  ASSERT_OK(ca->DerEncoding(&ca_der));
+  ASSERT_OK(ca_pre->DerEncoding(&ca_pre_der));
 
   EXPECT_EQ(H(pre_der),
             H(logged_cert.entry().precert_entry().pre_certificate()));
@@ -405,5 +417,6 @@ int main(int argc, char** argv) {
   OpenSSL_add_all_algorithms();
   ERR_load_crypto_strings();
   cert_trans::LoadCtExtensions();
+  ConfigureSerializerForV1CT();
   return RUN_ALL_TESTS();
 }

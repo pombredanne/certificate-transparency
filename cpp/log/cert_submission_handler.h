@@ -1,9 +1,8 @@
-#ifndef CERT_SUBMISSION_HANDLER_H
-#define CERT_SUBMISSION_HANDLER_H
+#ifndef CERT_TRANS_LOG_CERT_SUBMISSION_HANDLER_H_
+#define CERT_TRANS_LOG_CERT_SUBMISSION_HANDLER_H_
 
 #include <string>
 
-#include "base/macros.h"
 #include "log/cert_checker.h"
 #include "proto/ct.pb.h"
 #include "proto/serializer.h"
@@ -20,6 +19,8 @@ class CertSubmissionHandler {
  public:
   // Does not take ownership of the cert_checker.
   explicit CertSubmissionHandler(const cert_trans::CertChecker* cert_checker);
+  CertSubmissionHandler(const CertSubmissionHandler&) = delete;
+  CertSubmissionHandler& operator=(const CertSubmissionHandler&) = delete;
 
   // These may change |chain|.
   // TODO(pphaneuf): These could return StatusOr<ct::LogEntry>.
@@ -36,11 +37,9 @@ class CertSubmissionHandler {
 
  private:
   const cert_trans::CertChecker* const cert_checker_;
-
-  DISALLOW_COPY_AND_ASSIGN(CertSubmissionHandler);
 };
 
 
 }  // namespace cert_trans
 
-#endif
+#endif  // CERT_TRANS_LOG_CERT_SUBMISSION_HANDLER_H_

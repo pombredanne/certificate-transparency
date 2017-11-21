@@ -1,6 +1,7 @@
 #include "merkletree/compact_merkle_tree.h"
 
 #include <assert.h>
+#include <glog/logging.h>
 #include <stddef.h>
 #include <string>
 #include <vector>
@@ -8,32 +9,35 @@
 #include "merkletree/merkle_tree_math.h"
 
 using cert_trans::MerkleTreeInterface;
+using std::move;
 using std::string;
+using std::unique_ptr;
 
-CompactMerkleTree::CompactMerkleTree(SerialHasher* hasher)
+CompactMerkleTree::CompactMerkleTree(unique_ptr<SerialHasher> hasher)
     : MerkleTreeInterface(),
-      treehasher_(hasher),
+      treehasher_(move(hasher)),
       leaf_count_(0),
       leaves_processed_(0),
       level_count_(0),
       root_(treehasher_.HashEmpty()) {
 }
 
-CompactMerkleTree::CompactMerkleTree(MerkleTree& model, SerialHasher* hasher)
+CompactMerkleTree::CompactMerkleTree(MerkleTree* model,
+                                     unique_ptr<SerialHasher> hasher)
     : MerkleTreeInterface(),
-      tree_(std::max<int64_t>(0, model.LevelCount() - 1)),
-      treehasher_(hasher),
-      leaf_count_(model.LeafCount()),
+      tree_(std::max<int64_t>(0, CHECK_NOTNULL(model)->LevelCount() - 1)),
+      treehasher_(move(hasher)),
+      leaf_count_(model->LeafCount()),
       leaves_processed_(0),
-      level_count_(model.LevelCount()),
+      level_count_(model->LevelCount()),
       root_(treehasher_.HashEmpty()) {
-  if (model.LeafCount() == 0) {
+  if (model->LeafCount() == 0) {
     return;
   }
   // Get the inclusion proof path to the last entry in the tree, which by
   // definition must consist purely of left-hand nodes.
-  std::vector<string> path(model.PathToCurrentRoot(model.LeafCount()));
-  if (path.size() > 0) {
+  std::vector<string> path(model->PathToCurrentRoot(model->LeafCount()));
+  if (!path.empty()) {
     /* We have to do some juggling here as tree_[] differs from our MerkleTree
     // structure in that incomplete right-hand subtrees 'fall-through' to lower
     // levels:
@@ -69,7 +73,7 @@ CompactMerkleTree::CompactMerkleTree(MerkleTree& model, SerialHasher* hasher)
     // index into tree_, starting at the leaf level:
     int level(0);
     std::vector<string>::const_iterator i = path.begin();
-    size_t size_of_previous_tree(model.LeafCount() - 1);
+    size_t size_of_previous_tree(model->LeafCount() - 1);
     for (; size_of_previous_tree != 0; size_of_previous_tree >>= 1) {
       if ((size_of_previous_tree & 1) != 0) {
         // if the level'th bit in the previous tree size is set, then we have
@@ -87,17 +91,17 @@ CompactMerkleTree::CompactMerkleTree(MerkleTree& model, SerialHasher* hasher)
   // the last entry was added, so we PushBack the final right-hand entry
   // here, which will perform any recalculations necessary to reach the final
   // tree.
-  PushBack(0, model.LeafHash(model.LeafCount()));
-  assert(model.CurrentRoot() == CurrentRoot());
-  assert(model.LeafCount() == LeafCount());
-  assert(model.LevelCount() == LevelCount());
+  PushBack(0, model->LeafHash(model->LeafCount()));
+  assert(model->CurrentRoot() == CurrentRoot());
+  assert(model->LeafCount() == LeafCount());
+  assert(model->LevelCount() == LevelCount());
 }
 
 
 CompactMerkleTree::CompactMerkleTree(const CompactMerkleTree& other,
-                                     SerialHasher* hasher)
+                                     unique_ptr<SerialHasher> hasher)
     : tree_(other.tree_),
-      treehasher_(hasher),
+      treehasher_(move(hasher)),
       leaf_count_(other.leaf_count_),
       leaves_processed_(other.leaves_processed_),
       level_count_(other.level_count_),

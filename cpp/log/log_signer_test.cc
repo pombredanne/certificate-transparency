@@ -6,6 +6,7 @@
 
 #include "log/log_signer.h"
 #include "log/test_signer.h"
+#include "proto/cert_serializer.h"
 #include "proto/ct.pb.h"
 #include "proto/serializer.h"
 #include "util/testing.h"
@@ -13,6 +14,8 @@
 
 namespace {
 
+using cert_trans::serialization::SerializeResult;
+using cert_trans::serialization::DeserializeResult;
 using ct::LogEntry;
 using ct::SignedCertificateTimestamp;
 using ct::DigitallySigned;
@@ -987,5 +990,6 @@ TEST_F(LogSignerTest, VerifyBadSerializedSTHSignature) {
 
 int main(int argc, char** argv) {
   cert_trans::test::InitTesting(argv[0], &argc, &argv, true);
+  ConfigureSerializerForV1CT();
   return RUN_ALL_TESTS();
 }

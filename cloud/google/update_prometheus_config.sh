@@ -8,24 +8,24 @@ source ${DIR}/config.sh $1
 source ${DIR}/util.sh
 
 set -e
-GCLOUD="gcloud"
+GCLOUD="gcloud --project ${PROJECT}"
 
 LOG_HOSTS=$(
   for i in ${LOG_MACHINES[@]}; do
-    echo -n "target: \"http://${i}.c.${PROJECT}.internal:80/metrics\"\n";
-    echo -n "target: \"http://${i}.c.${PROJECT}.internal:8080/metrics\"\n";
+    echo -n "    - ${i}.c.${PROJECT}.internal:80\n";
+    echo -n "    - ${i}.c.${PROJECT}.internal:8080\n";
   done)
 MIRROR_HOSTS=$(
   for i in ${MIRROR_MACHINES[@]}; do
-    echo -n "target: \"http://${i}.c.${PROJECT}.internal:80/metrics\"\n";
-    echo -n "target: \"http://${i}.c.${PROJECT}.internal:8080/metrics\"\n";
+    echo -n "    - ${i}.c.${PROJECT}.internal:80\n";
+    echo -n "    - ${i}.c.${PROJECT}.internal:8080\n";
   done)
 ETCD_HOSTS=$(
   for i in ${ETCD_MACHINES[@]}; do
-    echo -n "target: \"http://${i}.c.${PROJECT}.internal:8080/metrics\"\n";
+    echo -n "    - ${i}.c.${PROJECT}.internal:8080\n";
   done)
 
-export TMP_CONFIG=/tmp/prometheus.conf
+export TMP_CONFIG=$(mktemp)
 sed -- "s%@@LOG_TARGETS@@%${LOG_HOSTS}%g
         s%@@MIRROR_TARGETS@@%${MIRROR_HOSTS}%g
         s%@@ETCD_TARGETS@@%${ETCD_HOSTS}%g" < ${DIR}/../prometheus/prometheus.conf > ${TMP_CONFIG}
@@ -37,12 +37,12 @@ for i in `seq 0 $((${PROMETHEUS_NUM_REPLICAS} - 1))`; do
   WaitMachineUp ${INSTANCE} ${ZONE}
 
   # Workaround copy-files ignoring the --zone flag:
-  gcloud config set compute/zone ${ETCD_ZONES[1]}
+  ${GCLOUD} config set compute/zone ${ETCD_ZONES[1]}
   ${GCLOUD} compute copy-files \
       --zone ${ZONE} \
       ${TMP_CONFIG} ${INSTANCE}:.
   # Remove workaround
-  gcloud config unset compute/zone
+  ${GCLOUD} config unset compute/zone
 
   ${GCLOUD} compute ssh ${INSTANCE} \
       --zone ${ZONE} \
@@ -61,3 +61,5 @@ for i in `seq 0 $((${PROMETHEUS_NUM_REPLICAS} - 1))`; do
       echo "Prometheus container not yet running."
     fi'
 done
+
+rm ${TMP_CONFIG}

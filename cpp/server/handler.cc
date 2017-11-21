@@ -64,7 +64,7 @@ static Latency<milliseconds, string> http_server_request_latency_ms(
 
 
 HttpHandler::HttpHandler(LogLookup* log_lookup, const ReadOnlyDatabase* db,
-                         const ClusterStateController<LoggedEntry>* controller,
+                         const ClusterStateController* controller,
                          ThreadPool* pool, libevent::Base* event_base,
                          StalenessTracker* staleness_tracker)
     : log_lookup_(CHECK_NOTNULL(log_lookup)),
@@ -320,7 +320,7 @@ void HttpHandler::BlockingGetEntries(evhttp_request* req, int64_t start,
         !entry.SerializeExtraData(&extra_data) ||
         (include_scts &&
          Serializer::SerializeSCT(entry.sct(), &sct_data) !=
-             SerializeResult::OK)) {
+             cert_trans::serialization::SerializeResult::OK)) {
       LOG(WARNING) << "Failed to serialize entry @ " << i << ":\n"
                    << entry.DebugString();
       return SendJsonError(event_base_, req, HTTP_INTERNAL,
@@ -332,8 +332,8 @@ void HttpHandler::BlockingGetEntries(evhttp_request* req, int64_t start,
     json_entry.AddBase64("extra_data", extra_data);
 
     if (include_scts) {
-      // This is non-standard, and currently only used by other SuperDuper log
-      // nodes when "following" to fetch data from each other:
+      // This is non-standard for this implementation, and is currently only
+      // used by other nodes when "following" to fetch data from each other:
       json_entry.AddBase64("sct", sct_data);
     }
 

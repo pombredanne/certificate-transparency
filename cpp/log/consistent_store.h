@@ -5,41 +5,21 @@
 #include <mutex>
 #include <vector>
 
-#include "base/macros.h"
+#include "log/logged_entry.h"
 #include "proto/ct.pb.h"
 #include "util/status.h"
 #include "util/statusor.h"
 #include "util/task.h"
 
-
 namespace cert_trans {
 
 
-template <class Logged>
 class EtcdConsistentStore;
 
 
-// Wraps an instance of |T| and associates it with a versioning handle
-// (required for atomic 'compare-and-update' semantics.)
-template <class T>
-class EntryHandle {
+class EntryHandleBase {
  public:
-  EntryHandle() = default;
-
-  const T& Entry() const {
-    return entry_;
-  }
-
-  T* MutableEntry() {
-    return &entry_;
-  }
-
-  bool HasHandle() const {
-    return has_handle_;
-  }
-
-  int Handle() const {
-    return handle_;
+  EntryHandleBase() : has_handle_(false) {
   }
 
   bool HasKey() const {
@@ -50,17 +30,71 @@ class EntryHandle {
     return key_;
   }
 
+  void SetKey(const std::string& key) {
+    key_ = key;
+  }
+
+  bool HasHandle() const {
+    return has_handle_;
+  }
+
+  int Handle() const {
+    return handle_;
+  }
+
+  void SetHandle(int new_handle) {
+    handle_ = new_handle;
+    has_handle_ = true;
+  }
+
+  virtual bool SerializeToString(std::string* output) const = 0;
+
+ protected:
+  EntryHandleBase(int handle) : has_handle_(true), handle_(handle) {
+  }
+  EntryHandleBase(const std::string& key, int handle)
+      : key_(key), has_handle_(true), handle_(handle) {
+  }
+  EntryHandleBase(const std::string& key) : key_(key), has_handle_(false) {
+  }
+
+  std::string key_;
+  bool has_handle_;
+  int handle_;
+};
+
+
+// Wraps an instance of |T| and associates it with a versioning handle
+// (required for atomic 'compare-and-update' semantics.)
+template <class T>
+class EntryHandle : public EntryHandleBase {
+ public:
+  EntryHandle() : entry_() {
+  }
+
+  const T& Entry() const {
+    return entry_;
+  }
+
+  T* MutableEntry() {
+    return &entry_;
+  }
+
+  bool SerializeToString(std::string* output) const override {
+    return entry_.SerializeToString(output);
+  }
+
  private:
   EntryHandle(const T& entry, int handle)
-      : entry_(entry), has_handle_(true), handle_(handle) {
+      : EntryHandleBase(handle), entry_(entry) {
   }
 
   EntryHandle(const std::string& key, const T& entry, int handle)
-      : key_(key), entry_(entry), has_handle_(true), handle_(handle) {
+      : EntryHandleBase(key, handle), entry_(entry) {
   }
 
   explicit EntryHandle(const std::string& key, const T& entry)
-      : key_(key), entry_(entry), has_handle_(false) {
+      : EntryHandleBase(key), entry_(entry) {
   }
 
   void Set(const std::string& key, const T& entry, int handle) {
@@ -70,21 +104,8 @@ class EntryHandle {
     has_handle_ = true;
   }
 
-  void SetHandle(int new_handle) {
-    handle_ = new_handle;
-    has_handle_ = true;
-  }
-
-  void SetKey(const std::string& key) {
-    key_ = key;
-  }
-
-  std::string key_;
   T entry_;
-  bool has_handle_;
-  int handle_;
 
-  template <class Logged>
   friend class EtcdConsistentStore;
   friend class EtcdConsistentStoreTest;
 };
@@ -103,7 +124,6 @@ struct Update {
 };
 
 
-template <class Logged>
 class ConsistentStore {
  public:
   typedef std::function<void(const Update<ct::SignedTreeHead>& update)>
@@ -114,6 +134,8 @@ class ConsistentStore {
       ClusterConfigCallback;
 
   ConsistentStore() = default;
+  ConsistentStore(const ConsistentStore&) = delete;
+  ConsistentStore& operator=(const ConsistentStore&) = delete;
 
   virtual ~ConsistentStore() = default;
 
@@ -123,13 +145,13 @@ class ConsistentStore {
 
   virtual util::StatusOr<ct::SignedTreeHead> GetServingSTH() const = 0;
 
-  virtual util::Status AddPendingEntry(Logged* entry) = 0;
+  virtual util::Status AddPendingEntry(LoggedEntry* entry) = 0;
 
   virtual util::Status GetPendingEntryForHash(
-      const std::string& hash, EntryHandle<Logged>* entry) const = 0;
+      const std::string& hash, EntryHandle<LoggedEntry>* entry) const = 0;
 
   virtual util::Status GetPendingEntries(
-      std::vector<EntryHandle<Logged>>* entries) const = 0;
+      std::vector<EntryHandle<LoggedEntry>>* entries) const = 0;
 
   virtual util::Status GetSequenceMapping(
       EntryHandle<ct::SequenceMapping>* entry) const = 0;
@@ -157,9 +179,6 @@ class ConsistentStore {
   // Returns either the number of entries cleaned up, or a Status describing
   // the error.
   virtual util::StatusOr<int64_t> CleanupOldEntries() = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ConsistentStore);
 };
 
 

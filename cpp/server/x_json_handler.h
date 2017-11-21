@@ -17,11 +17,13 @@ class XJsonHttpHandler : public HttpHandler {
   // instance.  The |frontend| parameters can be NULL, in which case this
   // server will not accept "add-json" requests.
   XJsonHttpHandler(LogLookup* log_lookup, const ReadOnlyDatabase* db,
-                   const ClusterStateController<LoggedEntry>* controller,
+                   const ClusterStateController* controller,
                    Frontend* frontend, ThreadPool* pool,
                    libevent::Base* event_base, StalenessTracker*);
 
   ~XJsonHttpHandler() = default;
+  XJsonHttpHandler(const XJsonHttpHandler&) = delete;
+  XJsonHttpHandler& operator=(const XJsonHttpHandler&) = delete;
 
  protected:
   void AddHandlers(libevent::HttpServer* server) override;
@@ -33,8 +35,6 @@ class XJsonHttpHandler : public HttpHandler {
 
   void BlockingAddJson(evhttp_request* req,
                        std::shared_ptr<JsonObject> json) const;
-
-  DISALLOW_COPY_AND_ASSIGN(XJsonHttpHandler);
 };
 
 

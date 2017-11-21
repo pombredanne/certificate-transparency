@@ -23,6 +23,7 @@
 #include "log/strict_consistent_store.h"
 #include "log/tree_signer.h"
 #include "merkletree/merkle_verifier.h"
+#include "proto/xjson_serializer.h"
 #include "server/log_processes.h"
 #include "server/server.h"
 #include "server/server_helper.h"
@@ -94,12 +95,13 @@ int main(int argc, char* argv[]) {
   signal(SIGINT, SIG_IGN);
   signal(SIGTERM, SIG_IGN);
 
+  ConfigureSerializerForV1XJSON();
   util::InitCT(&argc, &argv);
 
   Server::StaticInit();
 
   util::StatusOr<EVP_PKEY*> pkey(ReadPrivateKey(FLAGS_key));
-  CHECK_EQ(pkey.status(), util::Status::OK);
+  CHECK_EQ(pkey.status(), ::util::OkStatus());
   LogSigner log_signer(pkey.ValueOrDie());
 
   cert_trans::EnsureValidatorsRegistered();
@@ -119,7 +121,8 @@ int main(int argc, char* argv[]) {
                                     &url_fetcher));
 
   const LogVerifier log_verifier(new LogSigVerifier(pkey.ValueOrDie()),
-                                 new MerkleVerifier(new Sha256Hasher));
+                                 new MerkleVerifier(unique_ptr<Sha256Hasher>(
+                                     new Sha256Hasher)));
 
   ThreadPool http_pool(FLAGS_num_http_server_threads);
 
@@ -141,10 +144,7 @@ int main(int argc, char* argv[]) {
   handler.SetProxy(server.proxy());
   handler.Add(server.http_server());
 
-  TreeSigner<LoggedEntry> tree_signer(
-      std::chrono::duration<double>(FLAGS_guard_window_seconds), db.get(),
-      server.log_lookup()->GetCompactMerkleTree(new Sha256Hasher),
-      server.consistent_store(), &log_signer);
+  TreeSigner tree_signer(std::chrono::duration<double>(FLAGS_guard_window_seconds), db.get(), server.log_lookup()->GetCompactMerkleTree(new Sha256Hasher), server.consistent_store(), &log_signer);
 
   if (stand_alone_mode) {
     // Set up a simple single-node environment.
@@ -175,12 +175,12 @@ int main(int argc, char* argv[]) {
       util::SyncTask task(event_base.get());
       etcd_client->Create("/root/sequence_mapping", "", &resp, task.task());
       task.Wait();
-      CHECK_EQ(util::Status::OK, task.status());
+      CHECK_EQ(::util::OkStatus(), task.status());
     }
 
     // Do an initial signing run to get the initial STH, again this is
     // temporary until we re-populate FakeEtcd from the DB.
-    CHECK_EQ(tree_signer.UpdateTree(), TreeSigner<LoggedEntry>::OK);
+    CHECK_EQ(tree_signer.UpdateTree(), TreeSigner::OK);
 
     // Need to boot-strap the Serving STH too because we consider it an error
     // if it's not set, which in turn causes us to not attempt to become

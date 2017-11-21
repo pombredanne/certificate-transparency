@@ -1,6 +1,5 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef JSON_WRAPPER_H
-#define JSON_WRAPPER_H
+#ifndef CERT_TRANS_UTIL_JSON_WRAPPER_H_
+#define CERT_TRANS_UTIL_JSON_WRAPPER_H_
 
 #include <glog/logging.h>
 #include <json.h>
@@ -11,7 +10,6 @@
 #include <sstream>
 #include <string>
 
-#include "base/macros.h"
 #include "proto/serializer.h"
 #include "util/util.h"
 
@@ -54,6 +52,9 @@ class JsonObject {
       json_object_put(obj_);
   }
 
+  JsonObject(const JsonObject&) = delete;
+  JsonObject& operator=(const JsonObject&) = delete;
+
   // Get the object out, and stop tracking it so we _won't_ put() it
   // when we are destroyed. The caller needs to ensure it is freed.
   json_object* Extract() {
@@ -93,7 +94,7 @@ class JsonObject {
   void Add(const char* name, const ct::DigitallySigned& ds) {
     std::string signature;
     CHECK_EQ(Serializer::SerializeDigitallySigned(ds, &signature),
-             SerializeResult::OK);
+             cert_trans::serialization::SerializeResult::OK);
     AddBase64(name, signature);
   }
 
@@ -137,8 +138,6 @@ class JsonObject {
   void Add(const char* name, json_object* obj) {
     json_object_object_add(obj_, name, obj);
   }
-
-  DISALLOW_COPY_AND_ASSIGN(JsonObject);
 };
 
 class JsonBoolean : public JsonObject {
@@ -214,4 +213,4 @@ class JsonArray : public JsonObject {
   }
 };
 
-#endif
+#endif  // CERT_TRANS_UTIL_JSON_WRAPPER_H_

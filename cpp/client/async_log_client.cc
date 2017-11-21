@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "log/cert.h"
+#include "proto/cert_serializer.h"
 #include "proto/serializer.h"
 #include "util/json_wrapper.h"
 
@@ -16,6 +17,7 @@ using cert_trans::CertChain;
 using cert_trans::PreCertChain;
 using cert_trans::URL;
 using cert_trans::UrlFetcher;
+using cert_trans::serialization::DeserializeResult;
 using ct::DigitallySigned;
 using ct::MerkleAuditProof;
 using ct::SignedCertificateTimestamp;
@@ -126,9 +128,8 @@ void DoneGetRoots(UrlFetcher::Response* resp, vector<unique_ptr<Cert>>* roots,
     if (!jcert.Ok())
       return done(AsyncLogClient::BAD_RESPONSE);
 
-    unique_ptr<Cert> cert(new Cert);
-    const util::Status status(cert->LoadFromDerString(jcert.FromBase64()));
-    if (!status.ok()) {
+    unique_ptr<Cert> cert(Cert::FromDerString(jcert.FromBase64()));
+    if (!cert) {
       return done(AsyncLogClient::BAD_RESPONSE);
     }
 
@@ -195,19 +196,24 @@ void DoneGetEntries(UrlFetcher::Response* resp,
           DeserializeResult::OK) {
         return done(AsyncLogClient::BAD_RESPONSE);
       }
-      log_entry.sct.reset(sct.release());
+      log_entry.sct = move(sct);
     }
 
-    if (log_entry.leaf.timestamped_entry().entry_type() == ct::X509_ENTRY) {
-      Deserializer::DeserializeX509Chain(extra_data.FromBase64(),
-                                         log_entry.entry.mutable_x509_entry());
-    } else if (log_entry.leaf.timestamped_entry().entry_type() ==
-               ct::PRECERT_ENTRY) {
-      Deserializer::DeserializePrecertChainEntry(
-          extra_data.FromBase64(), log_entry.entry.mutable_precert_entry());
-    } else {
-      LOG(FATAL) << "Don't understand entry type: "
-                 << log_entry.leaf.timestamped_entry().entry_type();
+    switch (log_entry.leaf.timestamped_entry().entry_type()) {
+      case ct::X509_ENTRY:
+        DeserializeX509Chain(extra_data.FromBase64(),
+                             log_entry.entry.mutable_x509_entry());
+        break;
+      case ct::PRECERT_ENTRY:
+        DeserializePrecertChainEntry(extra_data.FromBase64(),
+                                     log_entry.entry.mutable_precert_entry());
+        break;
+      case ct::X_JSON_ENTRY:
+        // nothing to do
+        break;
+      default:
+        LOG(FATAL) << "Don't understand entry type: "
+                   << log_entry.leaf.timestamped_entry().entry_type();
     }
 
     new_entries.emplace_back(move(log_entry));
@@ -500,7 +506,7 @@ void AsyncLogClient::InternalAddChain(const CertChain& cert_chain,
   JsonArray jchain;
   for (size_t n = 0; n < cert_chain.Length(); ++n) {
     string cert;
-    CHECK_EQ(util::Status::OK, cert_chain.CertAt(n)->DerEncoding(&cert));
+    CHECK_EQ(::util::OkStatus(), cert_chain.CertAt(n)->DerEncoding(&cert));
     jchain.AddBase64(cert);
   }
 

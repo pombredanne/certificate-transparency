@@ -5,9 +5,9 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "base/macros.h"
 #include "net/url_fetcher.h"
 #include "proto/ct.pb.h"
 
@@ -27,15 +27,17 @@ class AsyncLogClient {
  public:
   enum Status {
     OK,
-    CONNECT_FAILED,
     BAD_RESPONSE,
-    INTERNAL_ERROR,
     UNKNOWN_ERROR,
-    UPLOAD_FAILED,
     INVALID_INPUT,
   };
 
   struct Entry {
+    Entry() = default;
+    Entry(Entry&& src)
+        : leaf(src.leaf), entry(src.entry), sct(std::move(src.sct)) {
+    }
+
     ct::MerkleTreeLeaf leaf;
     ct::LogEntry entry;
     std::unique_ptr<ct::SignedCertificateTimestamp> sct;
@@ -50,6 +52,8 @@ class AsyncLogClient {
   // instead of a string?
   AsyncLogClient(util::Executor* const executor, UrlFetcher* fetcher,
                  const std::string& server_uri);
+  AsyncLogClient(const AsyncLogClient&) = delete;
+  AsyncLogClient& operator=(const AsyncLogClient&) = delete;
 
   void GetSTH(ct::SignedTreeHead* sth, const Callback& done);
 
@@ -62,7 +66,7 @@ class AsyncLogClient {
   void GetEntries(int first, int last, std::vector<Entry>* entries,
                   const Callback& done);
 
-  // This is NON-standard, and only works with SuperDuper logs.
+  // This is NON-standard, and only works with this log implementation.
   // It's intended for internal use when running in a clustered configuration.
   // This does not clear "entries" before appending the retrieved
   // entries.
@@ -99,8 +103,6 @@ class AsyncLogClient {
   util::Executor* const executor_;
   UrlFetcher* const fetcher_;
   const URL server_url_;
-
-  DISALLOW_COPY_AND_ASSIGN(AsyncLogClient);
 };
 
 

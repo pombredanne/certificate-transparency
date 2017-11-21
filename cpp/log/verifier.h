@@ -1,14 +1,13 @@
 // A base class for verifying signatures of unstructured data.  This class is
 // mockable.
 
-#ifndef SRC_LOG_VERIFIER_H_
-#define SRC_LOG_VERIFIER_H_
+#ifndef CERT_TRANS_LOG_VERIFIER_H_
+#define CERT_TRANS_LOG_VERIFIER_H_
 
 #include <openssl/evp.h>
 #include <openssl/x509.h>  // for i2d_PUBKEY
 #include <stdint.h>
 
-#include "base/macros.h"
 #include "proto/ct.pb.h"
 #include "util/openssl_scoped_types.h"
 
@@ -25,6 +24,8 @@ class Verifier {
 
   explicit Verifier(EVP_PKEY* pkey);
   virtual ~Verifier() = default;
+  Verifier(const Verifier&) = delete;
+  Verifier& operator=(const Verifier&) = delete;
 
   virtual std::string KeyID() const;
 
@@ -44,10 +45,8 @@ class Verifier {
   ct::DigitallySigned::HashAlgorithm hash_algo_;
   ct::DigitallySigned::SignatureAlgorithm sig_algo_;
   std::string key_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(Verifier);
 };
 
 }  // namespace cert_trans
 
-#endif  // SRC_LOG_VERIFIER_H_
+#endif  // CERT_TRANS_LOG_VERIFIER_H_

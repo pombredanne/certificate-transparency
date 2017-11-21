@@ -1,19 +1,22 @@
 import calendar
 import hashlib
 import re
+import unicodedata
+
 from ct.crypto import cert
 from ct.crypto.asn1 import x509_common
 from ct.proto import certificate_pb2
 
 
-def from_cert(certificate, observations=[]):
+def from_cert(certificate):
     """Pulls out interesting fields from certificate, so format of data will
     be similar in every database implementation."""
     proto = certificate_pb2.X509Description()
     proto.der = certificate.to_der()
     try:
         for sub in [(type_.short_name,
-                     to_unicode('.'.join(process_name(value.human_readable()))))
+                     to_unicode('.'.join(
+                         process_name(value.human_readable(), type_.short_name == 'CN'))))
                     for type_, value in certificate.subject()]:
             proto_sub = proto.subject.add()
             proto_sub.type, proto_sub.value = sub
@@ -22,7 +25,7 @@ def from_cert(certificate, observations=[]):
 
     try:
         for iss in [(type_.short_name,
-                     to_unicode('.'.join(process_name(value.human_readable()))))
+                     to_unicode('.'.join(process_name(value.human_readable(), False))))
                     for type_, value in certificate.issuer()]:
             proto_iss = proto.issuer.add()
             proto_iss.type, proto_iss.value = iss
@@ -82,19 +85,19 @@ def from_cert(certificate, observations=[]):
 
     proto.sha256_hash = hashlib.sha256(proto.der).digest()
 
-    for observation in observations:
-        proto_obs = proto.observations.add()
-        if observation.description:
-            proto_obs.description = observation.description
-        if observation.reason:
-            proto_obs.reason = observation.reason
-        proto_obs.details = observation.details_to_proto()
-
     return proto
 
 
-def to_unicode(str_):
-    return unicode(str_, 'utf-8', 'replace')
+def to_unicode(value):
+    encoded = unicode(value, 'utf-8', 'replace')
+    for ch in encoded:
+        try:
+            _ = unicodedata.name(ch)
+        except ValueError:
+            # Mangled Unicode code-point. Perhaps this is just
+            # plain ISO-8859-1 data incorrectly reported as UTF-8.
+            return unicode(value, 'iso-8859-1', 'replace')
+    return encoded
 
 
 def process_name(subject, reverse=True):

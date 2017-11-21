@@ -10,6 +10,7 @@
 
 #include "fetcher/continuous_fetcher.h"
 #include "log/etcd_consistent_store.h"
+#include "log/logged_entry.h"
 #include "proto/ct.pb.h"
 #include "util/libevent_wrapper.h"
 #include "util/masterelection.h"
@@ -28,16 +29,17 @@ class Database;
 //  - calculates the optimal STH for the cluster to serve at any given time.
 //  - determines whether this node is eligible to participare in the election,
 //    and leaves/joins the election as appropriate.
-template <class Logged>
 class ClusterStateController {
  public:
   ClusterStateController(util::Executor* executor,
                          const std::shared_ptr<libevent::Base>& base,
                          UrlFetcher* url_fetcher, Database* database,
-                         ConsistentStore<Logged>* store,
-                         MasterElection* election, ContinuousFetcher* fetcher);
+                         ConsistentStore* store, MasterElection* election,
+                         ContinuousFetcher* fetcher);
 
   ~ClusterStateController();
+  ClusterStateController(const ClusterStateController&) = delete;
+  ClusterStateController& operator=(const ClusterStateController&) = delete;
 
   // Updates *this* node's ClusterNodeState to reflect the new STH available.
   void NewTreeHead(const ct::SignedTreeHead& sth);
@@ -69,7 +71,22 @@ class ClusterStateController {
   std::vector<ct::ClusterNodeState> GetFreshNodes() const;
 
  private:
-  class ClusterPeer;
+  class ClusterPeer : public Peer {
+   public:
+    ClusterPeer(const std::shared_ptr<libevent::Base>& base,
+                UrlFetcher* fetcher, const ct::ClusterNodeState& state);
+    ClusterPeer(const ClusterPeer&) = delete;
+    ClusterPeer& operator=(const ClusterPeer&) = delete;
+
+    int64_t TreeSize() const override;
+    void UpdateClusterNodeState(const ct::ClusterNodeState& new_state);
+    ct::ClusterNodeState state() const;
+    std::pair<std::string, int> GetHostPort() const;
+
+   private:
+    mutable std::mutex lock_;
+    ct::ClusterNodeState state_;
+  };
 
   // Updates the representation of *this* node's state in the consistent store.
   void PushLocalNodeState(const std::unique_lock<std::mutex>& lock);
@@ -102,11 +119,11 @@ class ClusterStateController {
   void ClusterServingSTHUpdater();
 
   const std::shared_ptr<libevent::Base> base_;
-  UrlFetcher* const url_fetcher_;         // Not owned by us
-  Database* const database_;              // Not owned by us
-  ConsistentStore<Logged>* const store_;  // Not owned by us
-  MasterElection* const election_;        // Not owned by us
-  ContinuousFetcher* const fetcher_;      // Not owned by us
+  UrlFetcher* const url_fetcher_;     // Not owned by us
+  Database* const database_;          // Not owned by us
+  ConsistentStore* const store_;      // Not owned by us
+  MasterElection* const election_;    // Not owned by us
+  ContinuousFetcher* const fetcher_;  // Not owned by us
   util::SyncTask watch_config_task_;
   util::SyncTask watch_node_states_task_;
   util::SyncTask watch_serving_sth_task_;
@@ -123,8 +140,6 @@ class ClusterStateController {
   std::thread cluster_serving_sth_update_thread_;
 
   friend class ClusterStateControllerTest;
-
-  DISALLOW_COPY_AND_ASSIGN(ClusterStateController);
 };
 
 

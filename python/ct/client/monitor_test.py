@@ -1,12 +1,12 @@
 #!/usr/bin/env trial
 import copy
 import difflib
-import gflags
 import logging
 import mock
 import os
 import sys
 
+from absl import flags as gflags
 from ct.client import log_client
 from ct.client.db import sqlite_connection as sqlitecon
 from ct.client.db import sqlite_log_db
@@ -507,5 +507,5 @@ class MonitorTest(unittest.TestCase):
                 ).addCallback(try_again_with_all_entries).addCallback(lambda _:
                     fake_fetch.assert_called_once_with(15, 19))
 
-if __name__ == "__main__":
+if __name__ == "__main__" or __name__ == "ct.client.monitor_test":
     sys.argv = FLAGS(sys.argv)

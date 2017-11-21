@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-GCLOUD="gcloud"
 if [ "$1" == "" ]; then
   echo "Usage: $0 <config-file>"
   exit 1
@@ -9,6 +8,7 @@ fi
 CONFIG_FILE="$1"
 
 . ${DIR}/config.sh ${CONFIG_FILE}
+GCLOUD="gcloud --project ${PROJECT}"
 
 case "${INSTANCE_TYPE}" in
   "mirror")
@@ -34,65 +34,138 @@ ZONE_LIST=$(echo ${NODE_ZONES[*]} | tr " " "\n" | sort | uniq )
 
 echo "============================================================="
 echo "Creating network rules..."
-gcloud compute http-health-checks create get-sth-check \
-    --port 80 \
-    --request-path /ct/v1/get-sth
-gcloud compute firewall-rules create ${INSTANCE_TYPE}-node-80 \
-    --allow tcp:80 \
-    --target-tags ${INSTANCE_TYPE}-node
+echo "  http-health-checks create..."
+OBJNAME=get-sth-check
+PRESENT=`${GCLOUD} compute http-health-checks list ${OBJNAME} | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute http-health-checks create ${OBJNAME} \
+      --port 80 \
+      --request-path /ct/v1/get-sth
+else
+  echo "  ...${OBJNAME} already present"
+fi
+echo "  firewall-rules create..."
+OBJNAME=${INSTANCE_TYPE}-node-80
+PRESENT=`${GCLOUD} compute firewall-rules list ${OBJNAME} | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute firewall-rules create ${OBJNAME} \
+      --allow tcp:80 \
+      --target-tags ${INSTANCE_TYPE}-node
+else
+  echo "  ...${OBJNAME} already present"
+fi
 
+echo "  instance-groups unmanaged create..."
 for zone in ${ZONE_LIST}; do
-  gcloud compute instance-groups unmanaged \
-      create "${INSTANCE_TYPE}-group-${zone}" \
-      --zone ${zone} \
-      --network "default" &
+  OBJNAME=${INSTANCE_TYPE}-group-${zone}
+  PRESENT=`${GCLOUD} compute instance-groups unmanaged list ${OBJNAME} | grep ${OBJNAME} || true`
+  if [ "$PRESENT" == "" ]; then
+    ${GCLOUD} compute instance-groups unmanaged \
+        create "${OBJNAME}" \
+        --zone ${zone} &
+  else
+    echo "  ...${OBJNAME} already present"
+  fi
 done
 wait
 
+echo "  instance-groups unmanaged add-instances..."
 for i in `seq 0 $((${NODE_NUM_REPLICAS} - 1))`; do
-  gcloud compute instance-groups unmanaged instances \
-      --zone ${NODE_ZONES[${i}]} \
-      --instance-group "${INSTANCE_TYPE}-group-${NODE_ZONES[${i}]}" \
-      add ${NODE_MACHINES[${i}]} &
+  ZONE=${NODE_ZONES[${i}]}
+  MACHINE="${NODE_MACHINES[${i}]}"
+  OBJNAME=${INSTANCE_TYPE}-group-${ZONE}
+  PRESENT=`${GCLOUD} compute instance-groups unmanaged list-instances ${OBJNAME} --zone ${ZONE} | grep ${MACHINE} || true`
+  echo "PRESENT=$PRESENT:"
+  if [ "$PRESENT" == "" ]; then
+    ${GCLOUD} compute instance-groups unmanaged add-instances \
+        "${OBJNAME}" \
+        --zone ${ZONE} \
+        --instances ${MACHINE} &
+  else
+    echo "  ...${INSTANCE_TYPE}-group-${NODE_ZONES[${i}]} already contains ${NODE_MACHINES[${i}]}"
+  fi
 done
 wait
 
-gcloud compute addresses create "${INSTANCE_TYPE}-ip" \
-    --global
-export EXTERNAL_IP=$(gcloud compute addresses list "${INSTANCE_TYPE}-ip" |
-                     awk -- "/${INSTANCE_TYPE}-ip/ {print \$2}")
+echo "  addresses create..."
+OBJNAME=${INSTANCE_TYPE}-ip
+PRESENT=`${GCLOUD} compute addresses list "${OBJNAME}" | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute addresses create "${OBJNAME}" \
+      --global
+else
+  echo "  ...${OBJNAME} already present"
+fi
+export EXTERNAL_IP=$(${GCLOUD} compute addresses list "${OBJNAME}" |
+                     awk -- "/${OBJNAME}/ {print \$2}")
 echo "Service IP: ${EXTERNAL_IP}"
 
 
-gcloud compute backend-services create "${INSTANCE_TYPE}-lb-backend" \
-    --http-health-check "get-sth-check" \
-    --timeout "30"
+echo "  backend-services create..."
+OBJNAME=${INSTANCE_TYPE}-lb-backend
+PRESENT=`${GCLOUD} compute backend-services list ${OBJNAME} | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute backend-services create "${OBJNAME}" \
+      --http-health-checks "get-sth-check" \
+      --timeout "30" \
+      --global
+else
+  echo "  ...${OBJNAME} already present"
+fi
 
+echo "    backend-services add-backend..."
 for zone in ${ZONE_LIST}; do
-  gcloud compute backend-services add-backend "${INSTANCE_TYPE}-lb-backend" \
-    --group "${INSTANCE_TYPE}-group-${zone}" \
-    --zone ${zone} \
-    --balancing-mode "UTILIZATION" \
-    --capacity-scaler "1" \
-    --max-utilization "0.8"
+  SUBOBJNAME=${INSTANCE_TYPE}-group-${zone}
+  PRESENT=`${GCLOUD} compute backend-services list ${OBJNAME} | grep ${SUBOBJNAME} || true`
+  if [ "$PRESENT" == "" ]; then
+    ${GCLOUD} compute backend-services add-backend "${OBJNAME}" \
+      --instance-group "${SUBOBJNAME}" \
+      --instance-group-zone ${zone} \
+      --balancing-mode "UTILIZATION" \
+      --capacity-scaler "1" \
+      --max-utilization "0.8" \
+      --global
+  else
+    echo "    ...${SUBOBJNAME} already present in ${OBJNAME}"
+  fi
 done
 
+echo "  url-maps create..."
+OBJNAME=${INSTANCE_TYPE}-lb-url-map
+PRESENT=`${GCLOUD} compute url-maps list ${OBJNAME} | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute url-maps create "${OBJNAME}" \
+      --default-service "${INSTANCE_TYPE}-lb-backend"
+else
+  echo "  ...${OBJNAME} already present"
+fi
 
-gcloud compute url-maps create "${INSTANCE_TYPE}-lb-url-map" \
-    --default-service "${INSTANCE_TYPE}-lb-backend"
+echo "  target-http-proxies create..."
+OBJNAME=${INSTANCE_TYPE}-lb-http-proxy
+PRESENT=`${GCLOUD} compute target-http-proxies list ${OBJNAME} | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute target-http-proxies create "${OBJNAME}" \
+      --url-map "${INSTANCE_TYPE}-lb-url-map"
+else
+  echo "  ...${OBJNAME} already present"
+fi
 
-gcloud compute target-http-proxies create "${INSTANCE_TYPE}-lb-http-proxy" \
-    --url-map "${INSTANCE_TYPE}-lb-url-map"
-
-gcloud compute forwarding-rules create "${INSTANCE_TYPE}-fwd" \
-    --global \
-    --address "${EXTERNAL_IP}" \
-    --ip-protocol "TCP" \
-    --port-range "80" \
-    --target-http-proxy "${INSTANCE_TYPE}-lb-http-proxy"
+echo "  forwarding-rules create..."
+OBJNAME=${INSTANCE_TYPE}-fwd
+PRESENT=`${GCLOUD} compute forwarding-rules list ${OBJNAME} | grep ${OBJNAME} || true`
+if [ "$PRESENT" == "" ]; then
+  ${GCLOUD} compute forwarding-rules create "${OBJNAME}" \
+      --global \
+      --address "${EXTERNAL_IP}" \
+      --ip-protocol "TCP" \
+      --ports "80" \
+      --target-http-proxy "${INSTANCE_TYPE}-lb-http-proxy"
+else
+  echo "  ...${OBJNAME} already present"
+fi
 
 echo "============================================================="
 echo "External IPs:"
-gcloud compute forwarding-rules list
+${GCLOUD} compute forwarding-rules list
 echo "============================================================="
 

@@ -51,11 +51,12 @@ shared_ptr<JsonObject> ExtractJson(libevent::Base* base, evhttp_request* req) {
 }  // namespace
 
 
-XJsonHttpHandler::XJsonHttpHandler(
-    LogLookup* log_lookup, const ReadOnlyDatabase* db,
-    const ClusterStateController<LoggedEntry>* controller, Frontend* frontend,
-    ThreadPool* pool, libevent::Base* event_base,
-    StalenessTracker* staleness_tracker)
+XJsonHttpHandler::XJsonHttpHandler(LogLookup* log_lookup,
+                                   const ReadOnlyDatabase* db,
+                                   const ClusterStateController* controller,
+                                   Frontend* frontend, ThreadPool* pool,
+                                   libevent::Base* event_base,
+                                   StalenessTracker* staleness_tracker)
     : HttpHandler(log_lookup, db, controller, pool, event_base,
                   staleness_tracker),
       frontend_(frontend) {
@@ -93,7 +94,7 @@ void XJsonHttpHandler::BlockingAddJson(evhttp_request* req,
   entry.mutable_x_json_entry()->set_json(json->ToString());
 
   AddEntryReply(req, CHECK_NOTNULL(frontend_)
-                         ->QueueProcessedEntry(Status::OK, entry, &sct),
+                         ->QueueProcessedEntry(::util::OkStatus(), entry, &sct),
                 sct);
 }
 

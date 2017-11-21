@@ -1,6 +1,5 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef CERTIFICATE_DB_H
-#define CERTIFICATE_DB_H
+#ifndef CERT_TRANS_LOG_FILE_DB_H_
+#define CERT_TRANS_LOG_FILE_DB_H_
 
 #include <stdint.h>
 #include <map>
@@ -10,7 +9,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/macros.h"
 #include "log/database.h"
 #include "proto/ct.pb.h"
 #include "util/statusor.h"
@@ -38,6 +36,8 @@ class FileDB : public Database {
   FileDB(FileStorage* cert_storage, FileStorage* tree_storage,
          FileStorage* meta_storage);
   ~FileDB();
+  FileDB(const FileDB&) = delete;
+  FileDB& operator=(const FileDB&) = delete;
 
   static const size_t kTimestampBytesIndexed;
 
@@ -101,11 +101,9 @@ class FileDB : public Database {
   // The same as a string;
   std::string latest_timestamp_key_;
   DatabaseNotifierHelper callbacks_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileDB);
 };
 
 
 }  // namespace cert_trans
 
-#endif
+#endif  // CERT_TRANS_LOG_FILE_DB_H_

@@ -1,13 +1,11 @@
 // An interface for Merkle trees.  It makes it easier to write code that works
 // with all all flavors of Merkle trees.
 
-#ifndef SRC_MERKLETREE_MERKLE_TREE_INTERFACE_H_
-#define SRC_MERKLETREE_MERKLE_TREE_INTERFACE_H_
+#ifndef CERT_TRANS_MERKLETREE_MERKLE_TREE_INTERFACE_H_
+#define CERT_TRANS_MERKLETREE_MERKLE_TREE_INTERFACE_H_
 
 #include <stddef.h>
 #include <string>
-
-#include "base/macros.h"
 
 namespace cert_trans {
 
@@ -17,6 +15,8 @@ class MerkleTreeInterface {
  public:
   MerkleTreeInterface() = default;
   virtual ~MerkleTreeInterface() = default;
+  MerkleTreeInterface(const MerkleTreeInterface&) = delete;
+  MerkleTreeInterface& operator=(const MerkleTreeInterface&) = delete;
 
   // Length of a node (i.e., a hash), in bytes.
   virtual size_t NodeSize() const = 0;
@@ -56,11 +56,8 @@ class MerkleTreeInterface {
   // Returns the hash of an empty string if the tree has no leaves
   // (and hence, no root).
   virtual std::string CurrentRoot() = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MerkleTreeInterface);
 };
 
 }  // namespace cert_trans
 
-#endif  // SRC_MERKLETREE_MERKLE_TREE_INTERFACE_H_
+#endif  // CERT_TRANS_MERKLETREE_MERKLE_TREE_INTERFACE_H_

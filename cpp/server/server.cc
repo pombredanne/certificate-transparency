@@ -56,8 +56,7 @@ Gauge<>* latest_local_tree_size_gauge() {
 namespace {
 
 
-void RefreshNodeState(ClusterStateController<LoggedEntry>* controller,
-                      util::Task* task) {
+void RefreshNodeState(ClusterStateController* controller, util::Task* task) {
   CHECK_NOTNULL(task);
   const steady_clock::duration period(
       (seconds(FLAGS_node_state_refresh_seconds)));
@@ -131,9 +130,10 @@ Server::Server(const shared_ptr<libevent::Base>& event_base,
       internal_pool_(CHECK_NOTNULL(internal_pool)),
       server_task_(internal_pool_),
       consistent_store_(&election_,
-                        new EtcdConsistentStore<LoggedEntry>(
-                            event_base_.get(), internal_pool_, etcd_client_,
-                            &election_, FLAGS_etcd_root, node_id_)),
+                        new EtcdConsistentStore(event_base_.get(),
+                                                internal_pool_, etcd_client_,
+                                                &election_, FLAGS_etcd_root,
+                                                node_id_)),
       http_pool_(CHECK_NOTNULL(http_pool)) {
   CHECK_LT(0, FLAGS_port);
 
@@ -168,12 +168,12 @@ MasterElection* Server::election() {
 }
 
 
-ConsistentStore<LoggedEntry>* Server::consistent_store() {
+ConsistentStore* Server::consistent_store() {
   return &consistent_store_;
 }
 
 
-ClusterStateController<LoggedEntry>* Server::cluster_state_controller() {
+ClusterStateController* Server::cluster_state_controller() {
   return cluster_controller_.get();
 }
 
@@ -216,15 +216,15 @@ void Server::WaitForReplication() const {
 
 
 void Server::Initialise(bool is_mirror) {
-  fetcher_.reset(ContinuousFetcher::New(event_base_.get(), internal_pool_, db_,
-                                        log_verifier_, !is_mirror)
-                     .release());
+  fetcher_ = ContinuousFetcher::New(event_base_.get(), internal_pool_, db_,
+                                    log_verifier_, !is_mirror);
 
   log_lookup_.reset(new LogLookup(db_));
 
-  cluster_controller_.reset(new ClusterStateController<LoggedEntry>(
-      internal_pool_, event_base_, url_fetcher_, db_, &consistent_store_,
-      &election_, fetcher_.get()));
+  cluster_controller_.reset(
+      new ClusterStateController(internal_pool_, event_base_, url_fetcher_,
+                                 db_, &consistent_store_, &election_,
+                                 fetcher_.get()));
 
   // Publish this node's hostname:port info
   cluster_controller_->SetNodeHostPort(FLAGS_server, FLAGS_port);
@@ -245,11 +245,10 @@ void Server::Initialise(bool is_mirror) {
                                         cluster_controller_.get(),
                                         server_task_.task()));
 
-  proxy_.reset(
-      new Proxy(event_base_.get(),
-                bind(&ClusterStateController<LoggedEntry>::GetFreshNodes,
-                     cluster_controller_.get()),
-                url_fetcher_, http_pool_));
+  proxy_.reset(new Proxy(event_base_.get(),
+                         bind(&ClusterStateController::GetFreshNodes,
+                              cluster_controller_.get()),
+                         url_fetcher_, http_pool_));
 }
 
 

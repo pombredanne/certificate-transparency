@@ -1,8 +1,8 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-#ifndef MERKLETREE_H
-#define MERKLETREE_H
+#ifndef CERT_TRANS_MERKLETREE_MERKLE_TREE_H_
+#define CERT_TRANS_MERKLETREE_MERKLE_TREE_H_
 
 #include <stddef.h>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -24,8 +24,7 @@ class MerkleTree : public cert_trans::MerkleTreeInterface {
  public:
   // The constructor takes a pointer to some concrete hash function
   // instantiation of the SerialHasher abstract class.
-  // Takes ownership of the hasher.
-  explicit MerkleTree(SerialHasher* hasher);
+  explicit MerkleTree(std::unique_ptr<SerialHasher> hasher);
   virtual ~MerkleTree();
 
   // Length of a node (i.e., a hash), in bytes.
@@ -131,7 +130,7 @@ class MerkleTree : public cert_trans::MerkleTreeInterface {
   std::vector<std::string> SnapshotConsistency(size_t snapshot1,
                                                size_t snapshot2);
 
- private:
+ protected:
   // Update to a given snapshot, return the root.
   std::string UpdateToSnapshot(size_t snapshot);
   // Return the root of a past snapshot.
@@ -209,4 +208,22 @@ class MerkleTree : public cert_trans::MerkleTreeInterface {
   // The "true" level count for a fully evaluated tree.
   size_t level_count_;
 };
-#endif
+
+// Mutable Merkle Tree, supports updating nodes and truncating the tree.
+class MutableMerkleTree : public MerkleTree {
+ public:
+  // The constructor takes a pointer to some concrete hash function
+  // instantiation of the SerialHasher abstract class.
+  explicit MutableMerkleTree(std::unique_ptr<SerialHasher> hasher);
+  virtual ~MutableMerkleTree();
+
+  // Update |leaf|th leaf hash in the tree. Indexing starts from 1.
+  // Returns false if |leaf| is out of bounds.
+  bool UpdateLeafHash(size_t leaf, const std::string& hash);
+
+  // Truncate the tree by removing all leafs beyond |leaf|th leaf. Indexing
+  // starts from 1. Returns false if |leaf| is out of bounds.
+  bool Truncate(size_t leaf);
+};
+
+#endif  // CERT_TRANS_MERKLETREE_MERKLE_TREE_H_

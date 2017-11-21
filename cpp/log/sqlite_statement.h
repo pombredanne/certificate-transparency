@@ -1,13 +1,9 @@
-/* -*- mode: c++; indent-tabs-mode: nil -*- */
-
-#ifndef SQLITE_STATEMENT_H
-#define SQLITE_STATEMENT_H
+#ifndef CERT_TRANS_LOG_SQLITE_STATEMENT_H_
+#define CERT_TRANS_LOG_SQLITE_STATEMENT_H_
 
 #include <glog/logging.h>
 #include <sqlite3.h>
 #include <string>
-
-#include "base/macros.h"
 
 namespace sqlite {
 
@@ -28,6 +24,9 @@ class Statement {
     // can get SQLITE_CONSTRAINT if an insert failed due to a duplicate key.
     CHECK(ret == SQLITE_OK || ret == SQLITE_CONSTRAINT);
   }
+
+  Statement(const Statement&) = delete;
+  Statement& operator=(const Statement&) = delete;
 
   // Fields start at 0! |value| must have lifetime that covers its
   // use, which is up until the SQL statement finishes executing
@@ -62,10 +61,8 @@ class Statement {
 
  private:
   sqlite3_stmt* stmt_;
-
-  DISALLOW_COPY_AND_ASSIGN(Statement);
 };
 
 }  // namespace sqlite
 
-#endif  // SQLITE_STATEMENT_H
+#endif  // CERT_TRANS_LOG_SQLITE_STATEMENT_H_
